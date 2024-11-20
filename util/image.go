@@ -1,6 +1,7 @@
 package util
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
@@ -36,11 +37,11 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(x1, y1, x2, y2 int, test 
 		// 判断是否预期文本
 		_ = os.Remove(imagePath)
 		if strings.TrimSpace(string(log)) == test {
-			return err
+			return nil
 		}
 		// 延时
 		time.Sleep(time.Millisecond * 200)
 	}
 	// 检查输出中是否包含指定的应用名称
-	return err
+	return errors.New("找不到指定文本")
 }

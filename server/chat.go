@@ -118,13 +118,13 @@ func Send(hwnd syscall.Handle, text string) (out string, err error) {
 	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(233, 308, 267, 327, "GLOBAL") == nil {
 		// 判断是否在游戏界面
 		fmt.Println("----Send----", 2)
-		if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(30, 310, 61, 325, "MUTE") == nil {
+		if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(30, 310, 61, 325, "MUTE") != nil {
 			// 不在聊天界面
 			_ = robotgo.KeyTap("a", "ctrl")
 			// 延时2秒
 			time.Sleep(1 * time.Second)
 			if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(
-				30, 310, 61, 325, "MUTE") == nil {
+				30, 310, 61, 325, "MUTE") != nil {
 				// 不在聊天界面, 退出聊天界面
 				SaveChat(text)
 				fmt.Println("----Send----", 3)
