@@ -1,6 +1,6 @@
 module qq_client
 
-go 1.19
+go 1.23
 
 require (
 	github.com/atotto/clipboard v0.1.4

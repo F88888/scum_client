@@ -115,18 +115,16 @@ func Send(hwnd syscall.Handle, text string) (out string, err error) {
 	}
 	// 查询是否全局模式
 	fmt.Println("----Send----", 1)
-	if read, err = util.AreaExtractTextSpecified(
-		233, 308, 267, 327); err == nil && strings.Index(read, "GLOBAL") == -1 {
+	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(233, 308, 267, 327, "GLOBAL") == nil {
 		// 判断是否在游戏界面
 		fmt.Println("----Send----", 2)
-		if read, err = util.AreaExtractTextSpecified(
-			30, 310, 61, 325); err == nil && strings.Index(read, "MUTE") != -1 {
+		if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(30, 310, 61, 325, "MUTE") == nil {
 			// 不在聊天界面
 			_ = robotgo.KeyTap("a", "ctrl")
 			// 延时2秒
 			time.Sleep(1 * time.Second)
-			if read, err = util.AreaExtractTextSpecified(
-				30, 310, 61, 325); err == nil && strings.Index(read, "MUTE") != -1 {
+			if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(
+				30, 310, 61, 325, "MUTE") == nil {
 				// 不在聊天界面, 退出聊天界面
 				SaveChat(text)
 				fmt.Println("----Send----", 3)
@@ -135,13 +133,13 @@ func Send(hwnd syscall.Handle, text string) (out string, err error) {
 		}
 		// 判断是否本地模式
 		fmt.Println("----Send----", 4)
-		if read, err = util.AreaExtractTextSpecified(
-			237, 309, 268, 328); err == nil && strings.Index(read, "LOCAL") != -1 {
+		if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(
+			237, 309, 268, 328, "LOCAL") == nil {
 			// 在管理员聊天界面
 			fmt.Println("----Send----", 5)
 			_ = robotgo.KeyTap("tab")
-		} else if read, err = util.AreaExtractTextSpecified(
-			233, 308, 267, 327); err == nil && strings.Index(read, "ADMIN") != -1 {
+		} else if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(
+			233, 308, 267, 327, "ADMIN") == nil {
 			// 在管理员聊天界面
 			fmt.Println("----Send----", 6)
 			_ = robotgo.KeyTap("tab")
@@ -189,16 +187,13 @@ func Send(hwnd syscall.Handle, text string) (out string, err error) {
 			} else {
 				fmt.Println("是否修改返回剪贴板", out)
 				fmt.Println("----Send----", 12)
-				if read, err = util.AreaExtractTextSpecified(
-					233, 308, 267, 327); err == nil && strings.Index(read, "GLOBAL") == -1 {
-					if read, err = util.AreaExtractTextSpecified(
-						233, 308, 267, 327); err == nil && strings.Index(read, "GLOBAL") == -1 {
-						// 判断是否打开聊天界面
-						robotgo.MoveClick(82, 319, "", false)
-						_ = robotgo.KeyTap("a", "ctrl")
-						time.Sleep(1 * time.Second)
-						_ = robotgo.KeyTap("tab")
-					}
+				if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(
+					233, 308, 267, 327, "GLOBAL") == nil {
+					// 判断是否打开聊天界面
+					robotgo.MoveClick(82, 319, "", false)
+					_ = robotgo.KeyTap("a", "ctrl")
+					time.Sleep(1 * time.Second)
+					_ = robotgo.KeyTap("tab")
 				}
 				time.Sleep(time.Second * 1)
 				if out, err = clipboard.ReadAll(); err == nil && out != cache {

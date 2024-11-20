@@ -5,7 +5,6 @@ import (
 	"github.com/go-vgo/robotgo"
 	"os/exec"
 	"qq_client/util"
-	"strings"
 	"syscall"
 	"time"
 )
@@ -36,7 +35,6 @@ func Start() {
 	var ok bool
 	var err error
 	ErrorReboot()
-	var text string
 	var hwnd syscall.Handle
 	fmt.Println("重启机器人....")
 	//hwnd = util.GetForegroundWindow()
@@ -68,8 +66,8 @@ func Start() {
 	// 设置游戏窗口置顶
 	util.SetForegroundWindow(hwnd)
 	// 判断是否在登录页面
-	if text, err = util.AreaExtractTextSpecified(
-		66, 395, 168, 421); err == nil && strings.Index(text, "CONTINUE") != -1 {
+	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(
+		66, 395, 168, 421, "CONTINUE") == nil {
 		// 在登录界面判断是否有机器人
 		fmt.Println("目前在登录界面,判断是否有机器人....")
 		robotgo.MoveClick(426, 348, "enter", false)
@@ -100,8 +98,7 @@ func Start() {
 		return
 	}
 	// 判断是否在游戏界面
-	if text, err = util.AreaExtractTextSpecified(
-		30, 310, 61, 325); err == nil && strings.Index(text, "MUTE") != -1 {
+	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(30, 310, 61, 325, "MUTE") == nil {
 		// 不在聊天界面
 		fmt.Println("已进入游戏界面....")
 		_ = robotgo.KeyTap("t")
@@ -111,21 +108,24 @@ func Start() {
 		errorNumber = 0
 	}
 	// 判断是否本地模式
-	if text, err = util.AreaExtractTextSpecified(
-		237, 309, 268, 328); err == nil && strings.Index(text, "LOCAL") != -1 {
+	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(237, 309, 268, 328, "LOCAL") == nil {
 		// 在管理员聊天界面
 		_ = robotgo.KeyTap("tab")
-	} else if text, err = util.AreaExtractTextSpecified(
-		233, 308, 267, 327); err == nil && strings.Index(text, "GLOBAL") != -1 {
+	} else if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(
+		233, 308, 267, 327, "GLOBAL") == nil {
 		// 全局聊天界面, 启动机器人聊天模式
 		fmt.Println("全局聊天...")
 		ChatMonitor(hwnd)
-	} else if text, err = util.AreaExtractTextSpecified(
-		233, 308, 267, 327); err == nil && strings.Index(text, "ADMIN") != -1 {
+	} else if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(
+		233, 308, 267, 327, "ADMIN") == nil {
 		// 在管理员聊天界面
 		_ = robotgo.KeyTap("tab")
 		time.Sleep(1 * time.Second)
 		_ = robotgo.KeyTap("tab")
+	} else {
+		// 移动下位置，防止客户端出现bug
+		util.MoveWindow(hwnd, 10, 50, 857, 593)
+		util.MoveWindow(hwnd, 8, 31, 857, 593)
 	}
 	// 延时5秒
 	_ = robotgo.KeyTap("t")
