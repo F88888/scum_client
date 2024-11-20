@@ -62,6 +62,8 @@ func Start() {
 		return
 	}
 	// 设置游戏窗口大小
+	util.MoveWindow(hwnd, 10, 50, 857, 593)
+	time.Sleep(time.Second)
 	util.MoveWindow(hwnd, 8, 31, 857, 593)
 	// 设置游戏窗口置顶
 	util.SetForegroundWindow(hwnd)
@@ -125,6 +127,7 @@ func Start() {
 	} else {
 		// 移动下位置，防止客户端出现bug
 		util.MoveWindow(hwnd, 10, 50, 857, 593)
+		time.Sleep(time.Second)
 		util.MoveWindow(hwnd, 8, 31, 857, 593)
 	}
 	// 延时5秒
