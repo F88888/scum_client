@@ -1,0 +1,41 @@
+.idea/
+/log
+
+.DS_Store
+
+# Umi-OCR
+Umi-OCR
+
+# local env files
+.env.local
+.env.*.local
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.gradle
+*.njsproj
+*.sln
+*.exe
+*.log
+*.sw?
+
+go.sum
+
+
+# config file
+.env.development
+.env.production
+
+# linux build
+linux_linux
+
+# windows build
+go_build_qq_client.exe
