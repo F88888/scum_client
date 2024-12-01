@@ -115,12 +115,12 @@ func Send(hwnd syscall.Handle, text string) (out string, err error) {
 	}
 	// 查询是否全局模式
 	fmt.Println("----Send----", 1)
-	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(233, 308, 267, 327, "GLOBAL") == nil {
+	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(233, 308, 267, 327, "GLOBAL") != nil {
 		// 判断是否在游戏界面
 		fmt.Println("----Send----", 2)
 		if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(30, 310, 61, 325, "MUTE") != nil {
 			// 不在聊天界面
-			_ = robotgo.KeyTap("a", "ctrl")
+			_ = robotgo.KeyTap("t")
 			// 延时2秒
 			time.Sleep(1 * time.Second)
 			if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(
@@ -183,7 +183,7 @@ func Send(hwnd syscall.Handle, text string) (out string, err error) {
 			if out, err = clipboard.ReadAll(); err == nil && out != cache {
 				fmt.Println("----Send----", 11)
 				allOk = true
-				break
+				continue
 			} else {
 				fmt.Println("是否修改返回剪贴板", out)
 				fmt.Println("----Send----", 12)
@@ -192,8 +192,6 @@ func Send(hwnd syscall.Handle, text string) (out string, err error) {
 					// 判断是否打开聊天界面
 					robotgo.MoveClick(82, 319, "", false)
 					_ = robotgo.KeyTap("a", "ctrl")
-					time.Sleep(1 * time.Second)
-					_ = robotgo.KeyTap("tab")
 				}
 				time.Sleep(time.Second * 1)
 				if out, err = clipboard.ReadAll(); err == nil && out != cache {
@@ -245,8 +243,8 @@ func ChatMonitor(hwnd syscall.Handle) {
 				}
 			}
 		}
-		// 被30整除
-		if i%30 == 0 {
+		// 被15整除
+		if i%15 == 0 {
 			// 获取载具列表
 			if out, err = Send(hwnd, "#ListSpawnedVehicles true"); err != nil {
 				return
