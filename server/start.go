@@ -68,10 +68,12 @@ func Start() {
 	// 设置游戏窗口置顶
 	util.SetForegroundWindow(hwnd)
 	// 判断是否在登录页面
+	fmt.Println("1")
 	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(
 		66, 395, 168, 421, "CONTINUE") == nil {
 		// 在登录界面判断是否有机器人
 		fmt.Println("目前在登录界面,判断是否有机器人....")
+		robotgo.MoveClick(426, 348, "enter", false)
 		robotgo.MoveClick(426, 348, "enter", false)
 		if util.SpecifiedCoordinateColor(97, 142) != "ffffff" {
 			// 没有机器人,切换机器人模式
@@ -90,6 +92,7 @@ func Start() {
 		fmt.Println("登录中....")
 		robotgo.MoveClick(97, 405, "enter", false)
 	}
+	fmt.Println("2")
 	// 判断是否在加载界面
 	if util.SpecifiedCoordinateColor(427, 142) == "ffffff" && util.SpecifiedCoordinateColor(
 		438, 153) == "ffffff" {
@@ -110,21 +113,26 @@ func Start() {
 		errorNumber = 0
 	}
 	// 判断是否本地模式
+	fmt.Println("3")
 	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(237, 309, 268, 328, "LOCAL") == nil {
 		// 在管理员聊天界面
+		fmt.Println("4")
 		_ = robotgo.KeyTap("tab")
 	} else if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(
 		233, 308, 267, 327, "GLOBAL") == nil {
 		// 全局聊天界面, 启动机器人聊天模式
+		fmt.Println("5")
 		fmt.Println("全局聊天...")
 		ChatMonitor(hwnd)
 	} else if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(
 		233, 308, 267, 327, "ADMIN") == nil {
 		// 在管理员聊天界面
+		fmt.Println("6")
 		_ = robotgo.KeyTap("tab")
 		time.Sleep(1 * time.Second)
 		_ = robotgo.KeyTap("tab")
 	} else {
+		fmt.Println("7")
 		// 移动下位置，防止客户端出现bug
 		util.MoveWindow(hwnd, 10, 50, 857, 593)
 		time.Sleep(time.Second)

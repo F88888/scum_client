@@ -114,42 +114,36 @@ func Send(hwnd syscall.Handle, text string) (out string, err error) {
 		return out, nil
 	}
 	// 查询是否全局模式
-	fmt.Println("----Send----", 1)
 	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(233, 308, 267, 327, "GLOBAL") != nil {
 		// 判断是否在游戏界面
-		fmt.Println("----Send----", 2)
 		if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(30, 310, 61, 325, "MUTE") != nil {
 			// 不在聊天界面
 			_ = robotgo.KeyTap("t")
 			// 延时2秒
-			time.Sleep(1 * time.Second)
+			time.Sleep(100 * time.Microsecond)
 			if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(
 				30, 310, 61, 325, "MUTE") != nil {
 				// 不在聊天界面, 退出聊天界面
 				SaveChat(text)
-				fmt.Println("----Send----", 3)
 				return out, errors.New("reboot")
 			}
 		}
 		// 判断是否本地模式
-		fmt.Println("----Send----", 4)
 		if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(
 			237, 309, 268, 328, "LOCAL") == nil {
 			// 在管理员聊天界面
-			fmt.Println("----Send----", 5)
 			_ = robotgo.KeyTap("tab")
 		} else if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(
 			233, 308, 267, 327, "ADMIN") == nil {
 			// 在管理员聊天界面
-			fmt.Println("----Send----", 6)
 			_ = robotgo.KeyTap("tab")
-			time.Sleep(1 * time.Second)
+			time.Sleep(100 * time.Microsecond)
 			_ = robotgo.KeyTap("tab")
 		}
 	}
 	// 写入剪贴板
 	var cache string
-	fmt.Println("----Send----", 7, read)
+	_ = robotgo.KeyTap("delete")
 	for i := 0; i < 8; i++ {
 		// 查询剪贴板是否写入成功
 		if regexpList := global.ExtractLocationRegexp.FindAllString(text, -1); len(regexpList) == 6 {
@@ -158,7 +152,7 @@ func Send(hwnd syscall.Handle, text string) (out string, err error) {
 			cache = text
 		}
 		_ = clipboard.WriteAll(cache)
-		time.Sleep(time.Millisecond * 500)
+		time.Sleep(time.Millisecond * 100)
 		if read, err = clipboard.ReadAll(); err == nil && read != cache {
 			_ = clipboard.WriteAll(cache)
 		} else if err == nil && read == cache {
@@ -166,16 +160,26 @@ func Send(hwnd syscall.Handle, text string) (out string, err error) {
 		}
 	}
 	// 循环等待时间
-	fmt.Println("----Send----", 8)
-	time.Sleep(time.Millisecond * 100)
 	for i := 0; i < 10; i++ {
 		// 粘贴
 		_ = robotgo.KeyTap("a", "ctrl")
 		_ = robotgo.KeyTap("v", "ctrl")
+		if read, err = clipboard.ReadAll(); err == nil || read != cache {
+			time.Sleep(time.Millisecond * 500)
+			_ = clipboard.WriteAll(cache)
+			// 重置
+			_ = robotgo.KeyTap("a", "ctrl")
+			_ = robotgo.KeyTap("v", "ctrl")
+			read, err = clipboard.ReadAll()
+		}
+		// 最长限制
+		if len(read) > 200 {
+			_ = fmt.Errorf("max length")
+			return "", errors.New("max length")
+		}
 		time.Sleep(time.Millisecond * 100)
 		// 发送
 		_ = robotgo.KeyTap("enter")
-		fmt.Println("----Send----", 9)
 		// 是否修改返回剪贴板
 		if _, ok := updateClipboard[cache]; strings.Count(cache, "#listflags") != 0 || ok {
 			// 延时
@@ -192,8 +196,12 @@ func Send(hwnd syscall.Handle, text string) (out string, err error) {
 					// 判断是否打开聊天界面
 					robotgo.MoveClick(82, 319, "", false)
 					_ = robotgo.KeyTap("a", "ctrl")
+					time.Sleep(time.Millisecond * 300)
+				} else if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(
+					233, 308, 267, 327, "GLOBAL") != nil {
+					// 按t
+					_ = robotgo.KeyTap("t")
 				}
-				time.Sleep(time.Second * 1)
 				if out, err = clipboard.ReadAll(); err == nil && out != cache {
 					fmt.Println("----Send----", 13)
 					allOk = true
@@ -283,7 +291,6 @@ func ChatMonitor(hwnd syscall.Handle) {
 					})
 					// 判断是否退出
 					if lenList := flagsRegexp.FindAllStringSubmatch(out, 1); len(lenList) > 0 {
-						fmt.Println(lenList[0][1], lenList[0][2], lenList[0][1] == lenList[0][2])
 						if lenList[0][1] == lenList[0][2] {
 							fmt.Println("break")
 							break
