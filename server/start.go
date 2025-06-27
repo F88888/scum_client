@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	"github.com/go-vgo/robotgo"
 	"os/exec"
 	"qq_client/util"
@@ -13,6 +12,51 @@ import (
 var errorNumber int
 var errorNumber2 int
 
+// 窗口位置缓存
+var lastWindowX, lastWindowY int = -1, -1
+var lastWindowWidth, lastWindowHeight int = -1, -1
+
+// 添加聊天框状态追踪
+var lastChatState = "UNKNOWN"
+var chatStateStableCount = 0
+
+// 添加待处理指令队列状态
+var hasPendingCommands = false
+
+// isWindowInCorrectPosition 检查窗口是否在正确位置
+func isWindowInCorrectPosition(hwnd syscall.Handle) bool {
+	if hwnd == 0 {
+		return false
+	}
+
+	// 获取当前窗口位置
+	// 这里可以添加具体的窗口位置检查逻辑
+	// 暂时返回 false 以触发位置设置
+	return false
+}
+
+// setWindowPositionOnce 只在必要时设置窗口位置
+func setWindowPositionOnce(hwnd syscall.Handle) {
+	targetX, targetY := 8, 31
+	targetWidth, targetHeight := 857, 593
+
+	// 如果位置已经正确，跳过设置
+	if lastWindowX == targetX && lastWindowY == targetY &&
+		lastWindowWidth == targetWidth && lastWindowHeight == targetHeight {
+		return
+	}
+
+	logInfo("设置窗口位置和大小...")
+	util.MoveWindow(hwnd, targetX, targetY, targetWidth, targetHeight)
+
+	// 更新缓存
+	lastWindowX, lastWindowY = targetX, targetY
+	lastWindowWidth, lastWindowHeight = targetWidth, targetHeight
+
+	// 等待窗口稳定
+	time.Sleep(500 * time.Millisecond)
+}
+
 // ErrorReboot
 // @author: [Fantasia](https://www.npc0.com)
 // @function: ErrorReboot
@@ -20,125 +64,263 @@ var errorNumber2 int
 func ErrorReboot() {
 	// 判断错误次数
 	if errorNumber > 15 || errorNumber2 > 100 {
-		// 错误次数大于10，重启游戏
+		// 错误次数大于15，重启游戏
+		logError("错误次数过多 (errorNumber: %d, errorNumber2: %d)，重启游戏", errorNumber, errorNumber2)
 		cmd := exec.Command("taskkill", "/IM", "SCUM.exe", "/F")
 		_ = cmd.Run()
+		// 重置错误计数器
+		errorNumber = 0
+		errorNumber2 = 0
+		// 重置窗口位置缓存
+		lastWindowX, lastWindowY = -1, -1
+		lastWindowWidth, lastWindowHeight = -1, -1
+		// 重置聊天状态
+		lastChatState = "UNKNOWN"
+		chatStateStableCount = 0
+		// 重置指令队列状态
+		hasPendingCommands = false
 	}
+}
+
+// 检查是否有待处理的服务器指令
+func checkPendingCommands() bool {
+	commands := getAllPendingCommands()
+	return len(commands) > 0
+}
+
+// 检查游戏当前状态
+func checkGameState(hwnd syscall.Handle) string {
+	// 1. 检查是否在登录页面
+	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(66, 395, 168, 421, "CONTINUE") == nil {
+		return "LOGIN"
+	}
+
+	// 2. 检查是否在加载界面
+	if util.SpecifiedCoordinateColor(427, 142) == "ffffff" && util.SpecifiedCoordinateColor(438, 153) == "ffffff" {
+		return "LOADING"
+	}
+
+	// 3. 检查是否在聊天界面
+	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(30, 310, 61, 325, "MUTE") == nil {
+		// 进一步检查聊天模式
+		currentMode := getCurrentChatMode(hwnd)
+		return "GAME_" + currentMode
+	}
+
+	// 4. 检查是否在游戏主界面（没有聊天框激活）
+	// 这里可以通过检查游戏界面的其他特征来确认是否在游戏中
+	// 比如检查血条、生命值等游戏UI元素
+	if isInGameInterface(hwnd) {
+		return "GAME_MAIN"
+	}
+
+	return "UNKNOWN"
+}
+
+// 检查是否在游戏主界面（没有聊天框）
+func isInGameInterface(hwnd syscall.Handle) bool {
+	// 检查游戏界面的特征，这里可以添加更多的检测逻辑
+	// 比如检查生命值条、饥饿度等UI元素的存在
+	// 暂时通过排除法，如果不在登录、加载、聊天界面，且游戏在运行，则认为在游戏主界面
+	return true
 }
 
 // Start
 // @author: [Fantasia](https://www.npc0.com)
 // @function: 启动服务主逻辑
-// @description: 机器人登录检测主逻辑
+// @description: 机器人登录检测主逻辑 - 优化版本
 func Start() {
 	// init
 	var ok bool
 	var err error
-	ErrorReboot()
 	var hwnd syscall.Handle
-	fmt.Println("重启机器人....")
-	//hwnd = util.GetForegroundWindow()
-	//fmt.Println(util.GetClassName(hwnd))
-	//fmt.Println(util.GetWindowText(hwnd))
+
+	ErrorReboot()
+	logDebug("检查游戏状态...")
+
 	// 判断是否有scum游戏进程
 	if ok, err = util.CheckIfAppRunning("SCUM"); err != nil || !ok {
 		// 启动游戏
 		cmd := exec.Command("cmd", "/C", "start", "", "steam://rungameid/513710")
-		fmt.Println("游戏未启动,启动游戏")
+		logInfo("游戏未启动，正在启动游戏...")
 		_ = cmd.Start()
 		errorNumber++
-		// 延时30秒
+		// 延时30秒等待游戏启动
 		time.Sleep(30 * time.Second)
 		return
 	}
+
 	// 查找窗口句柄
 	if hwnd = util.FindWindow("UnrealWindow", "SCUM  "); hwnd == 0 {
 		cmd := exec.Command("cmd", "/C", "start", "", "steam://rungameid/513710")
-		fmt.Println("游戏窗口未找到!!!")
+		logError("游戏窗口未找到，重新启动游戏...")
 		_ = cmd.Start()
-		// 延时120秒
+		// 延时120秒等待游戏完全加载
 		time.Sleep(120 * time.Second)
 		errorNumber++
 		return
 	}
-	// 设置游戏窗口大小
-	util.MoveWindow(hwnd, 10, 50, 857, 593)
-	time.Sleep(time.Second)
-	util.MoveWindow(hwnd, 8, 31, 857, 593)
+
+	logDebug("找到游戏窗口，开始状态检测...")
+
+	// 只在必要时设置游戏窗口大小和位置
+	setWindowPositionOnce(hwnd)
+
 	// 设置游戏窗口置顶
 	util.SetForegroundWindow(hwnd)
-	// 判断是否在登录页面
-	fmt.Println("1")
-	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(
-		66, 395, 168, 421, "CONTINUE") == nil {
-		// 在登录界面判断是否有机器人
-		fmt.Println("目前在登录界面,判断是否有机器人....")
+	time.Sleep(200 * time.Millisecond)
+
+	// 获取当前游戏状态
+	currentState := checkGameState(hwnd)
+	logDebug("当前游戏状态: %s", currentState)
+
+	// 检查是否有待处理的指令
+	hasPendingCommands = checkPendingCommands()
+
+	// 根据状态进行相应处理
+	switch {
+	case currentState == "LOGIN":
+		logInfo("检测到登录界面，验证机器人状态...")
 		robotgo.MoveClick(426, 348, "enter", false)
+		time.Sleep(100 * time.Millisecond)
 		robotgo.MoveClick(426, 348, "enter", false)
+
 		if util.SpecifiedCoordinateColor(97, 142) != "ffffff" {
 			// 没有机器人,切换机器人模式
-			fmt.Println("没有机器人,切换机器人模式....")
+			logInfo("未检测到机器人模式，正在切换...")
 			if err = robotgo.KeyTap("d", "ctrl"); err != nil {
-				fmt.Println("切换机器人模式失败:", err)
+				logError("切换机器人模式失败: %v", err)
 				errorNumber++
 				return
 			}
-			// 延时5秒
+			// 延时等待切换完成
 			time.Sleep(1 * time.Second)
 			errorNumber++
 			return
 		}
+
 		// 点击登录
-		fmt.Println("登录中....")
+		logInfo("开始登录...")
 		robotgo.MoveClick(97, 405, "enter", false)
-	}
-	fmt.Println("2")
-	// 判断是否在加载界面
-	if util.SpecifiedCoordinateColor(427, 142) == "ffffff" && util.SpecifiedCoordinateColor(
-		438, 153) == "ffffff" {
-		// 延时120秒
-		fmt.Println("加载界面....")
+		time.Sleep(1 * time.Second)
+		return
+
+	case currentState == "LOADING":
+		// 在加载界面，等待
+		logDebug("检测到加载界面，等待加载完成...")
 		time.Sleep(1 * time.Second)
 		errorNumber2++
 		return
-	}
-	// 判断是否在游戏界面
-	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(30, 310, 61, 325, "MUTE") == nil {
-		// 不在聊天界面
-		fmt.Println("已进入游戏界面....")
-		_ = robotgo.KeyTap("t")
-		// 延时2秒
-		time.Sleep(1 * time.Second)
+
+	case currentState == "GAME_MAIN":
+		// 在游戏主界面，检查是否有待处理的指令
+		if hasPendingCommands {
+			logInfo("检测到游戏主界面，有待处理指令，激活聊天监控...")
+			// 重置错误计数器
+			errorNumber2 = 0
+			errorNumber = 0
+			// 激活聊天并开始监控
+			ChatMonitorWithActivation(hwnd)
+		} else {
+			// 没有待处理指令，保持在游戏主界面，定期检查
+			logDebug("游戏主界面，无待处理指令，定期检查...")
+			// 执行定时任务（每分钟的三个固定指令）
+			executePeriodicCommands(hwnd)
+			time.Sleep(5 * time.Second) // 短暂等待后再次检查
+		}
+		return
+
+	case currentState == "GAME_GLOBAL":
+		// 已经在GLOBAL模式，可以直接启动监控
+		logInfo("检测到GLOBAL模式，启动聊天监控...")
+		// 重置错误计数器
 		errorNumber2 = 0
 		errorNumber = 0
-	}
-	// 判断是否本地模式
-	fmt.Println("3")
-	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(237, 309, 268, 328, "LOCAL") == nil {
-		// 在管理员聊天界面
-		fmt.Println("4")
-		_ = robotgo.KeyTap("tab")
-	} else if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(
-		233, 308, 267, 327, "GLOBAL") == nil {
-		// 全局聊天界面, 启动机器人聊天模式
-		fmt.Println("5")
-		fmt.Println("全局聊天...")
 		ChatMonitor(hwnd)
-	} else if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(
-		233, 308, 267, 327, "ADMIN") == nil {
-		// 在管理员聊天界面
-		fmt.Println("6")
+		return
+
+	case currentState == "GAME_LOCAL":
+		// 在LOCAL模式，需要切换到GLOBAL
+		logInfo("检测到LOCAL模式，切换聊天模式...")
 		_ = robotgo.KeyTap("tab")
-		time.Sleep(1 * time.Second)
+		time.Sleep(300 * time.Millisecond)
+
+		// 验证是否切换成功
+		if getCurrentChatMode(hwnd) == "GLOBAL" {
+			logInfo("成功切换到GLOBAL模式，启动聊天监控...")
+			errorNumber2 = 0
+			errorNumber = 0
+			ChatMonitor(hwnd)
+			return
+		}
+		return
+
+	case currentState == "GAME_ADMIN":
+		// 在ADMIN模式，切换到GLOBAL模式
+		logInfo("检测到ADMIN模式，切换到GLOBAL模式...")
 		_ = robotgo.KeyTap("tab")
-	} else {
-		fmt.Println("7")
-		// 移动下位置，防止客户端出现bug
-		util.MoveWindow(hwnd, 10, 50, 857, 593)
-		time.Sleep(time.Second)
-		util.MoveWindow(hwnd, 8, 31, 857, 593)
+		time.Sleep(150 * time.Millisecond)
+		_ = robotgo.KeyTap("tab")
+		time.Sleep(300 * time.Millisecond)
+
+		// 验证是否切换成功
+		if getCurrentChatMode(hwnd) == "GLOBAL" {
+			logInfo("成功切换到GLOBAL模式，启动聊天监控...")
+			errorNumber2 = 0
+			errorNumber = 0
+			ChatMonitor(hwnd)
+			return
+		}
+		return
+
+	case currentState == "GAME_UNKNOWN":
+		// 在游戏界面但聊天模式未知，尝试激活聊天
+		logInfo("检测到游戏界面，聊天模式未知，尝试激活聊天功能...")
+
+		// 检查状态稳定性，避免频繁按T
+		if lastChatState == currentState {
+			chatStateStableCount++
+		} else {
+			chatStateStableCount = 0
+			lastChatState = currentState
+		}
+
+		// 只有在状态稳定且计数较低时才按T
+		if chatStateStableCount < 3 {
+			// 先按ESC确保退出任何菜单
+			_ = robotgo.KeyTap("escape")
+			time.Sleep(200 * time.Millisecond)
+
+			// 按T激活聊天
+			_ = robotgo.KeyTap("t")
+			time.Sleep(500 * time.Millisecond)
+		} else {
+			logError("聊天状态持续未知，可能需要手动干预")
+			errorNumber2++
+		}
+		return
+
+	default:
+		// 未知状态
+		logError("检测到未知游戏状态: %s", currentState)
+
+		// 检查状态稳定性
+		if lastChatState == currentState {
+			chatStateStableCount++
+		} else {
+			chatStateStableCount = 0
+			lastChatState = currentState
+		}
+
+		// 只有在连续出现问题时才重新设置窗口位置
+		if chatStateStableCount > 5 {
+			logInfo("状态持续异常，重新设置窗口位置...")
+			lastWindowX, lastWindowY = -1, -1 // 重置缓存，强制重新设置
+			setWindowPositionOnce(hwnd)
+			chatStateStableCount = 0
+		}
+
+		errorNumber2++
+		return
 	}
-	// 延时5秒
-	_ = robotgo.KeyTap("t")
-	time.Sleep(1 * time.Second)
 }
