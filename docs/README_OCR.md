@@ -11,38 +11,55 @@ SCUM Client 现已集成 PaddleOCR 作为图片文字识别引擎，替换了原
 - ✅ **本地服务**: 无需外部 API，完全离线运行
 - ✅ **智能管理**: 自动启动、停止和重启 OCR 服务
 - ✅ **详细日志**: 完整的识别过程和结果记录
+- ✅ **文件嵌入**: OCR 相关文件嵌入到可执行文件中，单文件分发
 
 ## 快速开始
 
 ### 1. 首次安装
 
-运行自动化安装脚本：
+**推荐方式（完全自动）**：
+```bash
+scum_client.exe
+```
+
+程序会自动：
+- 下载内置 Python 环境到 py_embed/
+- 安装 PaddlePaddle 和 PaddleOCR 依赖
+- 下载英文识别模型 (约 10MB)
+- 启动 OCR 服务
+
+**备用方式（手动安装）**：
 ```bash
 ocr_setup.bat
 ```
-
-这个脚本会自动：
-- 检查 Python 环境
-- 创建虚拟环境
-- 安装 PaddleOCR 和依赖
-- 下载英文识别模型 (约 10MB)
+仅在自动安装失败时使用，会使用系统 Python 进行手动配置。
 
 ### 2. 编译程序
 
+**推荐方法（使用构建脚本）**:
+```bash
+scripts\build_with_ocr.bat
+```
+
+**手动构建**:
 ```bash
 go build -o scum_client.exe
 ```
 
 ### 3. 启动程序
 
+直接运行生成的可执行文件：
 ```bash
-start.bat
+scum_client.exe
 ```
 
 程序会自动：
+- **提取嵌入的 OCR 文件** (ocr_setup.bat, ocr_server.py)
 - 检查 OCR 环境
 - 启动 OCR 服务
 - 开始游戏监控
+
+**注意**: 生成的 scum_client.exe 文件包含了所有必需的 OCR 文件，可以独立运行，无需额外文件。
 
 ## 系统要求
 
@@ -62,10 +79,11 @@ start.bat
 安装完成后的目录结构：
 ```
 scum_client/
-├── ocr_env/                     # Python 虚拟环境
+├── py_embed/                   # Python 内置环境
+│   ├── python.exe
+│   ├── get-pip.py
 │   ├── Scripts/
-│   │   ├── python.exe
-│   │   └── activate.bat
+│   │   └── python.exe          # 统一启动路径
 │   └── Lib/
 ├── paddle_models/               # PaddleOCR 模型
 │   └── en_PP-OCRv4_mobile_rec_infer/
@@ -104,10 +122,16 @@ OCR 服务已就绪
 如果需要重新设置环境：
 ```bash
 # 删除现有环境
-rmdir /s ocr_env
+rmdir /s py_embed
 rmdir /s paddle_models
 
-# 重新运行设置
+# 重新运行设置（程序会自动重新下载内置 Python）
+scum_client.exe
+```
+
+**故障排查时的备用方案**：
+```bash
+# 如果自动安装失败，使用手动安装
 ocr_setup.bat
 ```
 
@@ -149,6 +173,17 @@ GET http://127.0.0.1:1224/
 
 ### 常见问题
 
+#### 0. "不是内部或外部命令" 或编码错误
+**原因**: 批处理文件编码问题或命令解析错误
+**解决方案**:
+- 确保使用最新版本的 `ocr_setup.bat` (已修复编码问题)
+- 如果仍有问题，手动运行：
+  ```bash
+  # 手动安装到内置 Python 环境
+  py_embed\Scripts\python.exe -m pip install paddlepaddle==2.5.2
+  py_embed\Scripts\python.exe -m pip install paddleocr flask requests pillow
+  ```
+
 #### 1. "未找到 Python"
 **解决方案**:
 - 安装 Python 3.8+ 版本
@@ -158,14 +193,9 @@ GET http://127.0.0.1:1224/
 #### 2. "创建虚拟环境失败"
 **解决方案**:
 ```bash
-# 手动创建虚拟环境
-python -m venv ocr_env
-
-# 激活环境
-ocr_env\Scripts\activate.bat
-
-# 安装依赖
-pip install paddleocr flask pillow requests -i https://pypi.tuna.tsinghua.edu.cn/simple
+# 手动安装到内置 Python 环境
+py_embed\Scripts\python.exe -m pip install paddlepaddle==2.5.2 -i https://pypi.tuna.tsinghua.edu.cn/simple
+py_embed\Scripts\python.exe -m pip install paddleocr flask pillow requests -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
 #### 3. "模型下载失败"
@@ -189,7 +219,7 @@ pip install paddleocr flask pillow requests -i https://pypi.tuna.tsinghua.edu.cn
 - 查看 OCR 服务日志：`logs/ocr_service.log`
 - 手动启动服务：
   ```bash
-  ocr_env\Scripts\python.exe ocr_server.py
+  py_embed\Scripts\python.exe ocr_server.py
   ```
 
 #### 5. "图片识别错误"
@@ -250,10 +280,9 @@ app.run(
 在 `ocr_server.py` 中调整 PaddleOCR 初始化参数：
 ```python
 ocr = PaddleOCR(
-    use_angle_cls=True,
+    use_textline_orientation=True,  # 新版本参数（替代 use_angle_cls）
     lang='en',
     rec_model_dir=rec_model_dir,
-    show_log=False,
     # 添加其他参数
     use_gpu=False,  # 是否使用GPU
     det_db_thresh=0.3,  # 检测阈值
@@ -281,6 +310,26 @@ en_PP-OCRv4_mobile_rec Model
 4. OCR 服务使用 PaddleOCR 进行识别
 5. 返回识别结果给 Go 客户端
 6. Go 客户端根据结果执行相应操作
+
+### 文件嵌入机制
+使用 Go 1.16+ 的 `embed` 包，将 OCR 相关文件直接嵌入到可执行文件中：
+
+```go
+//go:embed config.yaml ocr_setup.bat ocr_server.py
+var File embed.FS
+```
+
+**工作流程**:
+1. 程序启动时自动检查当前目录
+2. 如果缺少 OCR 文件，自动从嵌入的文件系统中提取
+3. 提取的文件保存到程序运行目录
+4. 后续正常使用这些文件
+
+**优势**:
+- 📦 **单文件分发**: 无需携带额外文件
+- 🔄 **自动修复**: 缺失文件时自动重新提取
+- 🛡️ **版本一致**: 确保使用正确版本的 OCR 脚本
+- 📁 **部署简单**: 只需复制一个 exe 文件即可
 
 ### 模型信息
 - **模型名称**: en_PP-OCRv4_mobile_rec

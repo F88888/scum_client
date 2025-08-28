@@ -3,45 +3,62 @@ package main
 import (
 	"embed"
 	"fmt"
-	"gopkg.in/y
 	"gopkg.in/yaml.v3"
 	"os"
-	"os/signal"
 	"qq_client/global"
 	"qq_client/server"
 	"qq_client/util"
-	"fmt"
 )
 
-//go:embed config.yaml
+//go:embed config.yaml assets/ocr_setup.bat assets/ocr_setup_simple.bat assets/ocr_server.py assets/download_model.py
 var File embed.FS
+
+// extractEmbeddedFiles 提取嵌入的文件到当前目录
+func extractEmbeddedFiles() error {
+	// 文件映射：嵌入路径 -> 输出文件名
+	fileMap := map[string]string{
+		"assets/ocr_setup.bat":        "ocr_setup.bat",
+		"assets/ocr_setup_simple.bat": "ocr_setup_simple.bat",
+		"assets/ocr_server.py":        "ocr_server.py",
+		"assets/download_model.py":    "download_model.py",
+	}
+
+	for embeddedPath, outputFileName := range fileMap {
+		// 检查文件是否已存在
+		if _, err := os.Stat(outputFileName); !os.IsNotExist(err) {
+			fmt.Printf("文件 %s 已存在，跳过提取\n", outputFileName)
+			continue
+		}
+
+		// 从嵌入文件系统中读取文件内容
+		content, err := File.ReadFile(embeddedPath)
+		if err != nil {
+			return fmt.Errorf("读取嵌入文件 %s 失败: %v", embeddedPath, err)
+		}
+
+		// 写入到当前目录
+		err = os.WriteFile(outputFileName, content, 0644)
+		if err != nil {
+			return fmt.Errorf("写入文件 %s 失败: %v", outputFileName, err)
+		}
+
+		fmt.Printf("已提取文件: %s\n", outputFileName)
+	}
+
+	return nil
+}
 
 func main() {
 	// init
 	var err error
 
-	
+	// 首先提取嵌入的 OCR 相关文件
+	fmt.Println("正在提取 OCR 必需文件...")
+	if err = extractEmbeddedFiles(); err != nil {
+		fmt.Printf("提取 OCR 文件失败: %v\n", err)
+		fmt.Println("程序将继续运行，但 OCR 功能可能不可用")
+	}
 
-	
-	// 设置信号处理，优雅退出
-	sigChan := make(chan os.Signal, 1)
-
-	
-	// 启动一个goroutine处理信号
-	go func() {
-		<-sigChan
-
-		
-		// 停止 OCR 服务
-
-		
-		// 关闭日志文件
-
-		
-		fmt.Println("程序已安全退出")
-		os.Exit(0)
-
-	
 	// 确保 OCR 服务运行
 	fmt.Println("检查 OCR 服务状态...")
 	if err = util.EnsureOCRService(); err != nil {
@@ -51,17 +68,15 @@ func main() {
 	} else {
 		fmt.Println("OCR 服务已就绪")
 
-	
-	// casBin config
-	if config, err = File.ReadFile("config.yaml"); err == nil {
-		// 解析配置文件
-		err = yaml.Unmarshal(config, &global.ScumConfig)
+		// casBin config
+		if config, err := File.ReadFile("config.yaml"); err == nil {
+			// 解析配置文件
+			err = yaml.Unmarshal(config, &global.ScumConfig)
 
-	
-
-	
-	// 循环机器人主逻辑
-	for {
-		server.Start()
+			// 循环机器人主逻辑
+			for {
+				server.Start()
+			}
+		}
 	}
 }

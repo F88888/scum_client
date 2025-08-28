@@ -13,12 +13,24 @@ import (
 	"github.com/go-vgo/robotgo"
 )
 
-// FastCommand 快速命令执行器
+// FastCommand 快速命令执行器（升级版）
 type FastCommand struct {
 	hwnd         syscall.Handle
 	isReady      bool
 	lastCommand  time.Time
 	commandQueue []string
+
+	// 集成增强功能
+	enhancedExecutor   *util.EnhancedCommandExecutor
+	inputManager       *util.EnhancedInputManager
+	continuousExecutor *util.ContinuousCommandExecutor
+
+	// 配置选项
+	preferredInputMethod    util.InputMethod
+	preferredChatMethod     util.ChatActivationMethod
+	enableSmartMode         bool
+	enableBatchOptimization bool
+	enableContinuousMode    bool
 }
 
 // CommandRequest HTTP API请求结构
@@ -35,14 +47,20 @@ type CommandResponse struct {
 	Duration string `json:"duration,omitempty"`
 }
 
-// NewFastCommand 创建快速命令执行器
+// NewFastCommand 创建快速命令执行器（增强版）
 func NewFastCommand() *FastCommand {
-	return &FastCommand{
-		commandQueue: make([]string, 0),
+	fc := &FastCommand{
+		commandQueue:            make([]string, 0),
+		preferredInputMethod:    util.INPUT_CLIPBOARD_PASTE,
+		preferredChatMethod:     util.CHAT_ACTIVATE_T_KEY,
+		enableSmartMode:         true,
+		enableBatchOptimization: true,
+		enableContinuousMode:    true,
 	}
+	return fc
 }
 
-// Initialize 初始化快速命令执行器
+// Initialize 初始化快速命令执行器（增强版）
 func (fc *FastCommand) Initialize() error {
 	// 查找SCUM游戏窗口
 	fc.hwnd = util.FindWindow("UnrealWindow", "SCUM  ")
@@ -50,12 +68,23 @@ func (fc *FastCommand) Initialize() error {
 		return fmt.Errorf("未找到SCUM游戏窗口")
 	}
 
+	// 初始化增强组件
+	fc.enhancedExecutor = util.NewEnhancedCommandExecutor(fc.hwnd)
+	fc.inputManager = util.NewEnhancedInputManager(fc.hwnd)
+	fc.continuousExecutor = util.NewContinuousCommandExecutor(fc.hwnd)
+
+	// 设置默认方法
+	fc.enhancedExecutor.SetDefaultMethods(fc.preferredInputMethod, fc.preferredChatMethod)
+	fc.continuousExecutor.SetDefaultInputMethod(fc.preferredInputMethod)
+
 	// 设置窗口为前台并准备聊天界面
 	if err := fc.prepareForCommands(); err != nil {
 		return fmt.Errorf("准备命令执行环境失败: %v", err)
 	}
 
 	fc.isReady = true
+	fmt.Printf("FastCommand 初始化完成，启用智能模式: %v，批量优化: %v，连续模式: %v\n",
+		fc.enableSmartMode, fc.enableBatchOptimization, fc.enableContinuousMode)
 	return nil
 }
 
@@ -116,7 +145,7 @@ func (fc *FastCommand) getCurrentChatMode() string {
 	return "UNKNOWN"
 }
 
-// ExecuteCommand 执行单个命令（优化版本）
+// ExecuteCommand 执行单个命令（增强版）
 func (fc *FastCommand) ExecuteCommand(command string) (string, error) {
 	if !fc.isReady {
 		if err := fc.Initialize(); err != nil {
@@ -124,6 +153,29 @@ func (fc *FastCommand) ExecuteCommand(command string) (string, error) {
 		}
 	}
 
+	start := time.Now()
+
+	// 使用增强执行器（如果启用智能模式）
+	if fc.enableSmartMode && fc.enhancedExecutor != nil {
+		execution, err := fc.enhancedExecutor.ExecuteCommand(command)
+		duration := time.Since(start)
+		fc.lastCommand = time.Now()
+
+		if err != nil {
+			return "", fmt.Errorf("增强执行失败: %v", err)
+		}
+
+		result := fmt.Sprintf("命令执行完成 [耗时: %v] [方法: %d]\n结果: %s",
+			duration, execution.InputMethod, execution.Result)
+		return result, nil
+	}
+
+	// 回退到传统方法
+	return fc.executeCommandLegacy(command)
+}
+
+// executeCommandLegacy 传统执行方法（保持兼容性）
+func (fc *FastCommand) executeCommandLegacy(command string) (string, error) {
 	start := time.Now()
 
 	// 预处理命令
@@ -153,7 +205,7 @@ func (fc *FastCommand) ExecuteCommand(command string) (string, error) {
 	return fmt.Sprintf("命令执行完成 [耗时: %v]\n结果: %s", duration, result), nil
 }
 
-// ExecuteBatch 批量执行命令（优化版本）
+// ExecuteBatch 批量执行命令（增强版）
 func (fc *FastCommand) ExecuteBatch(commands []string) ([]string, error) {
 	if !fc.isReady {
 		if err := fc.Initialize(); err != nil {
@@ -161,6 +213,69 @@ func (fc *FastCommand) ExecuteBatch(commands []string) ([]string, error) {
 		}
 	}
 
+	start := time.Now()
+
+	// 使用连续执行（如果启用连续模式）
+	if fc.enableContinuousMode && fc.continuousExecutor != nil {
+		err := fc.continuousExecutor.ExecuteContinuousBatch(commands)
+
+		var results []string
+		if err != nil {
+			results = append(results, fmt.Sprintf("连续执行失败: %v", err))
+		} else {
+			results = append(results, "连续执行成功")
+		}
+
+		// 获取统计信息
+		stats := fc.continuousExecutor.GetSessionStats()
+		totalDuration := time.Since(start)
+		summary := fmt.Sprintf("连续批量执行完成: %d命令, 总成功: %d, 总耗时: %v, 聊天框已关闭",
+			len(commands), stats.SuccessCommands, totalDuration)
+
+		results = append([]string{summary}, results...)
+
+		if err != nil {
+			return results, err
+		}
+		return results, nil
+	}
+
+	// 使用增强批量执行（如果启用批量优化）
+	if fc.enableBatchOptimization && fc.enhancedExecutor != nil {
+		executions, err := fc.enhancedExecutor.ExecuteBatch(commands)
+
+		var results []string
+		successCount := 0
+
+		for i, execution := range executions {
+			if execution.Success {
+				successCount++
+				results = append(results, fmt.Sprintf("命令 %d: %s [成功] [耗时: %v] [方法: %d]",
+					i+1, execution.Command, execution.ExecutionTime, execution.InputMethod))
+			} else {
+				results = append(results, fmt.Sprintf("命令 %d: %s [失败]",
+					i+1, execution.Command))
+			}
+		}
+
+		totalDuration := time.Since(start)
+		summary := fmt.Sprintf("增强批量执行完成: %d/%d成功, 总耗时: %v, 平均耗时: %v",
+			successCount, len(commands), totalDuration, totalDuration/time.Duration(len(commands)))
+
+		results = append([]string{summary}, results...)
+
+		if err != nil {
+			return results, fmt.Errorf("批量执行有错误: %v", err)
+		}
+		return results, nil
+	}
+
+	// 回退到传统批量执行
+	return fc.executeBatchLegacy(commands)
+}
+
+// executeBatchLegacy 传统批量执行方法（保持兼容性）
+func (fc *FastCommand) executeBatchLegacy(commands []string) ([]string, error) {
 	var results []string
 	start := time.Now()
 
@@ -195,7 +310,7 @@ func (fc *FastCommand) ExecuteBatch(commands []string) ([]string, error) {
 	}
 
 	totalDuration := time.Since(start)
-	summary := fmt.Sprintf("批量执行完成: %d个命令, 总耗时: %v, 平均耗时: %v",
+	summary := fmt.Sprintf("传统批量执行完成: %d个命令, 总耗时: %v, 平均耗时: %v",
 		len(commands), totalDuration, totalDuration/time.Duration(len(commands)))
 
 	results = append([]string{summary}, results...)
@@ -325,7 +440,23 @@ func (fc *FastCommand) StartHTTPServer(port string) {
 	// 预设命令端点
 	r.GET("/presets", fc.handlePresets)
 
+	// 新增增强功能端点
+	r.GET("/stats", fc.handleStats)
+	r.POST("/config", fc.handleConfig)
+	r.GET("/methods", fc.handleMethods)
+	r.POST("/test", fc.handleTest)
+
+	// 连续执行功能端点
+	r.POST("/continuous/start", fc.handleContinuousStart)
+	r.POST("/continuous/add", fc.handleContinuousAdd)
+	r.POST("/continuous/batch", fc.handleContinuousBatch)
+	r.POST("/continuous/end", fc.handleContinuousEnd)
+	r.GET("/continuous/status", fc.handleContinuousStatus)
+	r.POST("/continuous/sequence", fc.handleContinuousSequence)
+
 	fmt.Printf("快速命令HTTP服务器启动在端口 %s\n", port)
+	fmt.Printf("增强功能已启用 - 智能模式: %v, 批量优化: %v, 连续模式: %v\n",
+		fc.enableSmartMode, fc.enableBatchOptimization, fc.enableContinuousMode)
 	r.Run(":" + port)
 }
 
@@ -426,4 +557,385 @@ func (fc *FastCommand) handlePresets(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, presets)
+}
+
+// handleStats 处理统计信息请求
+func (fc *FastCommand) handleStats(c *gin.Context) {
+	stats := map[string]interface{}{
+		"ready":                  fc.isReady,
+		"last_command":           fc.lastCommand,
+		"smart_mode_enabled":     fc.enableSmartMode,
+		"batch_optimization":     fc.enableBatchOptimization,
+		"preferred_input_method": fc.preferredInputMethod,
+		"preferred_chat_method":  fc.preferredChatMethod,
+	}
+
+	// 如果增强执行器可用，获取详细统计
+	if fc.enhancedExecutor != nil {
+		enhancedStats := fc.enhancedExecutor.GetExecutionStats()
+		stats["enhanced_stats"] = enhancedStats
+	}
+
+	c.JSON(http.StatusOK, stats)
+}
+
+// handleConfig 处理配置更新请求
+func (fc *FastCommand) handleConfig(c *gin.Context) {
+	var config struct {
+		PreferredInputMethod    *util.InputMethod          `json:"preferred_input_method,omitempty"`
+		PreferredChatMethod     *util.ChatActivationMethod `json:"preferred_chat_method,omitempty"`
+		EnableSmartMode         *bool                      `json:"enable_smart_mode,omitempty"`
+		EnableBatchOptimization *bool                      `json:"enable_batch_optimization,omitempty"`
+	}
+
+	if err := c.ShouldBindJSON(&config); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "配置格式错误: " + err.Error(),
+		})
+		return
+	}
+
+	// 更新配置
+	if config.PreferredInputMethod != nil {
+		fc.preferredInputMethod = *config.PreferredInputMethod
+		if fc.enhancedExecutor != nil {
+			fc.enhancedExecutor.SetDefaultMethods(fc.preferredInputMethod, fc.preferredChatMethod)
+		}
+	}
+
+	if config.PreferredChatMethod != nil {
+		fc.preferredChatMethod = *config.PreferredChatMethod
+		if fc.enhancedExecutor != nil {
+			fc.enhancedExecutor.SetDefaultMethods(fc.preferredInputMethod, fc.preferredChatMethod)
+		}
+	}
+
+	if config.EnableSmartMode != nil {
+		fc.enableSmartMode = *config.EnableSmartMode
+	}
+
+	if config.EnableBatchOptimization != nil {
+		fc.enableBatchOptimization = *config.EnableBatchOptimization
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "配置已更新",
+		"config": map[string]interface{}{
+			"preferred_input_method":    fc.preferredInputMethod,
+			"preferred_chat_method":     fc.preferredChatMethod,
+			"enable_smart_mode":         fc.enableSmartMode,
+			"enable_batch_optimization": fc.enableBatchOptimization,
+		},
+	})
+}
+
+// handleMethods 处理输入方法信息请求
+func (fc *FastCommand) handleMethods(c *gin.Context) {
+	methods := map[string]interface{}{
+		"input_methods": map[string]int{
+			"SIMULATE_KEY":    int(util.INPUT_SIMULATE_KEY),
+			"WINDOW_MSG":      int(util.INPUT_WINDOW_MSG),
+			"UI_AUTOMATION":   int(util.INPUT_UI_AUTOMATION),
+			"CLIPBOARD_PASTE": int(util.INPUT_CLIPBOARD_PASTE),
+			"HYBRID":          int(util.INPUT_HYBRID),
+		},
+		"chat_methods": map[string]int{
+			"T_KEY":      int(util.CHAT_ACTIVATE_T_KEY),
+			"SLASH_KEY":  int(util.CHAT_ACTIVATE_SLASH_KEY),
+			"WINDOW_MSG": int(util.CHAT_ACTIVATE_WINDOW_MSG),
+		},
+		"descriptions": map[string]string{
+			"SIMULATE_KEY":    "模拟按键输入",
+			"WINDOW_MSG":      "窗口消息直接发送",
+			"UI_AUTOMATION":   "UI自动化接口",
+			"CLIPBOARD_PASTE": "剪贴板粘贴",
+			"HYBRID":          "智能选择最佳方式",
+			"T_KEY":           "T键激活聊天",
+			"SLASH_KEY":       "/键激活命令",
+		},
+	}
+
+	// 如果输入管理器可用，获取方法统计
+	if fc.inputManager != nil {
+		methodStats := fc.inputManager.GetMethodStats()
+		methods["method_stats"] = methodStats
+	}
+
+	c.JSON(http.StatusOK, methods)
+}
+
+// handleTest 处理测试请求
+func (fc *FastCommand) handleTest(c *gin.Context) {
+	var req struct {
+		InputMethod util.InputMethod          `json:"input_method"`
+		ChatMethod  util.ChatActivationMethod `json:"chat_method"`
+		TestText    string                    `json:"test_text"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "测试请求格式错误: " + err.Error(),
+		})
+		return
+	}
+
+	if req.TestText == "" {
+		req.TestText = "#ListPlayers"
+	}
+
+	if !fc.isReady {
+		if err := fc.Initialize(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": "初始化失败: " + err.Error(),
+			})
+			return
+		}
+	}
+
+	start := time.Now()
+
+	// 测试聊天激活
+	chatErr := fc.inputManager.ActivateChat(req.ChatMethod)
+
+	var inputErr error
+	if chatErr == nil {
+		// 测试文本输入
+		inputErr = fc.inputManager.SendText(req.TestText, req.InputMethod)
+	}
+
+	duration := time.Since(start)
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":         (chatErr == nil && inputErr == nil),
+		"chat_activation": (chatErr == nil),
+		"text_input":      (inputErr == nil),
+		"duration":        duration.String(),
+		"chat_error": func() string {
+			if chatErr != nil {
+				return chatErr.Error()
+			} else {
+				return ""
+			}
+		}(),
+		"input_error": func() string {
+			if inputErr != nil {
+				return inputErr.Error()
+			} else {
+				return ""
+			}
+		}(),
+		"input_method": req.InputMethod,
+		"chat_method":  req.ChatMethod,
+		"test_text":    req.TestText,
+	})
+}
+
+// handleContinuousStart 处理开始连续会话请求
+func (fc *FastCommand) handleContinuousStart(c *gin.Context) {
+	if !fc.isReady {
+		if err := fc.Initialize(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": "初始化失败: " + err.Error(),
+			})
+			return
+		}
+	}
+
+	if fc.continuousExecutor == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"message": "连续执行器未可用",
+		})
+		return
+	}
+
+	err := fc.continuousExecutor.StartContinuousSession()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": "启动连续会话失败: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":      true,
+		"message":      "连续会话已启动",
+		"session_info": fc.continuousExecutor.GetCurrentSessionInfo(),
+	})
+}
+
+// handleContinuousAdd 处理在连续会话中添加命令请求
+func (fc *FastCommand) handleContinuousAdd(c *gin.Context) {
+	var req CommandRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "请求格式错误: " + err.Error(),
+		})
+		return
+	}
+
+	if fc.continuousExecutor == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"message": "连续执行器未可用",
+		})
+		return
+	}
+
+	start := time.Now()
+	err := fc.continuousExecutor.AddCommandToContinuousSession(req.Command)
+	duration := time.Since(start)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success":  false,
+			"message":  "添加命令失败: " + err.Error(),
+			"duration": duration.String(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":      true,
+		"message":      "命令已添加到连续会话",
+		"command":      req.Command,
+		"duration":     duration.String(),
+		"session_info": fc.continuousExecutor.GetCurrentSessionInfo(),
+	})
+}
+
+// handleContinuousBatch 处理连续批量执行请求
+func (fc *FastCommand) handleContinuousBatch(c *gin.Context) {
+	var req CommandRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "请求格式错误: " + err.Error(),
+		})
+		return
+	}
+
+	if fc.continuousExecutor == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"message": "连续执行器未可用",
+		})
+		return
+	}
+
+	start := time.Now()
+	err := fc.continuousExecutor.ExecuteContinuousBatch(req.Commands)
+	duration := time.Since(start)
+
+	stats := fc.continuousExecutor.GetSessionStats()
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success":  false,
+			"message":  "连续批量执行失败: " + err.Error(),
+			"duration": duration.String(),
+			"stats":    stats,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":        true,
+		"message":        "连续批量执行成功",
+		"commands_count": len(req.Commands),
+		"duration":       duration.String(),
+		"stats":          stats,
+	})
+}
+
+// handleContinuousEnd 处理结束连续会话请求
+func (fc *FastCommand) handleContinuousEnd(c *gin.Context) {
+	if fc.continuousExecutor == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"message": "连续执行器未可用",
+		})
+		return
+	}
+
+	sessionInfo := fc.continuousExecutor.GetCurrentSessionInfo()
+	fc.continuousExecutor.EndContinuousSession()
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":            true,
+		"message":            "连续会话已结束",
+		"final_session_info": sessionInfo,
+	})
+}
+
+// handleContinuousStatus 处理连续会话状态查询请求
+func (fc *FastCommand) handleContinuousStatus(c *gin.Context) {
+	if fc.continuousExecutor == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"message": "连续执行器未可用",
+		})
+		return
+	}
+
+	status := map[string]interface{}{
+		"is_session_active":       fc.continuousExecutor.IsSessionActive(),
+		"current_session":         fc.continuousExecutor.GetCurrentSessionInfo(),
+		"session_stats":           fc.continuousExecutor.GetSessionStats(),
+		"continuous_mode_enabled": fc.enableContinuousMode,
+	}
+
+	c.JSON(http.StatusOK, status)
+}
+
+// handleContinuousSequence 处理预定义序列执行请求
+func (fc *FastCommand) handleContinuousSequence(c *gin.Context) {
+	var req struct {
+		SequenceName string `json:"sequence_name"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "请求格式错误: " + err.Error(),
+		})
+		return
+	}
+
+	if fc.continuousExecutor == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"message": "连续执行器未可用",
+		})
+		return
+	}
+
+	start := time.Now()
+	err := fc.continuousExecutor.ExecuteQuickSequence(req.SequenceName)
+	duration := time.Since(start)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success":       false,
+			"message":       "执行预定义序列失败: " + err.Error(),
+			"sequence_name": req.SequenceName,
+			"duration":      duration.String(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":       true,
+		"message":       "预定义序列执行成功",
+		"sequence_name": req.SequenceName,
+		"duration":      duration.String(),
+		"stats":         fc.continuousExecutor.GetSessionStats(),
+	})
 }

@@ -23,6 +23,9 @@ var chatStateStableCount = 0
 // 添加待处理指令队列状态
 var hasPendingCommands = false
 
+// 添加配置替换标记
+var configReplaced = false
+
 // isWindowInCorrectPosition 检查窗口是否在正确位置
 func isWindowInCorrectPosition(hwnd syscall.Handle) bool {
 	if hwnd == 0 {
@@ -79,6 +82,8 @@ func ErrorReboot() {
 		chatStateStableCount = 0
 		// 重置指令队列状态
 		hasPendingCommands = false
+		// 重置配置替换标记
+		configReplaced = false
 	}
 }
 
@@ -162,6 +167,17 @@ func Start() {
 	}
 
 	logDebug("找到游戏窗口，开始状态检测...")
+
+	// 游戏成功启动后替换配置文件（只执行一次）
+	if !configReplaced {
+		logInfo("检测到游戏成功启动，正在替换SCUM配置文件...")
+		if err := util.ReplaceSCUMConfig(); err != nil {
+			logError("替换SCUM配置文件失败: %v", err)
+		} else {
+			logInfo("SCUM配置文件替换完成")
+		}
+		configReplaced = true
+	}
 
 	// 只在必要时设置游戏窗口大小和位置
 	setWindowPositionOnce(hwnd)

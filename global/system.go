@@ -17,6 +17,7 @@ type OCRRequest struct {
 type OCRResponse struct {
 	Code      int     `json:"code"`
 	Data      string  `json:"data"`
+	Message   string  `json:"message"`
 	Time      float64 `json:"time"`
 	Timestamp float64 `json:"timestamp"`
 }

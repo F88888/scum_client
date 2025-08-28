@@ -8,7 +8,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"unsafe"
 )
 
 // QuickCommandExecutor 快速命令执行器

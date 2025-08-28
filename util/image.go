@@ -101,8 +101,12 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(x1, y1, x2, y2 int, test 
 			fmt.Printf("OCR识别结果: '%s'，未找到目标文字 '%s'\n", ocrResponse.Data, test)
 			continue
 		} else {
-			// 识别失败
-			fmt.Printf("OCR识别失败，错误代码: %d，错误信息: %s\n", ocrResponse.Code, ocrResponse.Data)
+			// 识别失败，优先显示后端 message
+			msg := ocrResponse.Message
+			if strings.TrimSpace(msg) == "" {
+				msg = ocrResponse.Data
+			}
+			fmt.Printf("OCR识别失败，错误代码: %d，错误信息: %s\n", ocrResponse.Code, msg)
 			continue
 		}
 	}
@@ -176,6 +180,10 @@ func ExtractTextFromArea(x1, y1, x2, y2 int) (string, error) {
 	if ocrResponse.Code == 100 || ocrResponse.Code == 200 {
 		return strings.TrimSpace(ocrResponse.Data), nil
 	} else {
-		return "", fmt.Errorf("OCR识别失败，错误代码: %d，错误信息: %s", ocrResponse.Code, ocrResponse.Data)
+		msg := ocrResponse.Message
+		if strings.TrimSpace(msg) == "" {
+			msg = ocrResponse.Data
+		}
+		return "", fmt.Errorf("OCR识别失败，错误代码: %d，错误信息: %s", ocrResponse.Code, msg)
 	}
 }

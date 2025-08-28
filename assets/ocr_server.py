@@ -38,25 +38,42 @@ def initialize_paddleocr():
         # 导入 PaddleOCR
         from paddleocr import PaddleOCR
         
+        # 设置模型缓存目录，避免重复下载
+        import os
+        home_dir = os.path.expanduser("~")
+        paddle_cache_dir = os.path.join(home_dir, ".paddleocr")
+        
+        # 确保缓存目录存在
+        os.makedirs(paddle_cache_dir, exist_ok=True)
+        logger.info(f"PaddleOCR 模型缓存目录: {paddle_cache_dir}")
+        
+        # 设置环境变量指定模型缓存路径
+        os.environ['PADDLEOCR_MODEL_PATH'] = paddle_cache_dir
+        
         # 检查自定义模型路径
-        rec_model_dir = "paddle_models/en_PP-OCRv4_mobile_rec_infer"
+        rec_model_dir = "paddle_models/PP-OCRv5_mobile_det"
         
         if os.path.exists(rec_model_dir):
             logger.info(f"使用自定义英文识别模型: {rec_model_dir}")
             # 使用自定义英文识别模型
             ocr = PaddleOCR(
-                use_angle_cls=True,
-                lang='en',
+                use_doc_orientation_classify=False,
+                use_doc_unwarping=False,
+                use_textline_orientation=False,
                 rec_model_dir=rec_model_dir,
-                show_log=False
+                show_log=False  # 减少日志输出
             )
         else:
-            logger.info("使用默认英文模型")
-            # 使用默认模型
+            logger.info("使用默认英文模型（模型将缓存到用户目录，避免重复下载）")
+            # 使用默认模型，指定语言和模型缓存
             ocr = PaddleOCR(
-                use_angle_cls=True,
-                lang='en',
-                show_log=False
+                use_doc_orientation_classify=False,
+                use_doc_unwarping=False,
+                use_textline_orientation=False,
+                lang='en',  # 明确指定英文，避免下载中文模型
+                show_log=False,  # 减少日志输出
+                use_gpu=False,  # 明确使用CPU，避免GPU相关问题
+                model_download_dir=paddle_cache_dir  # 指定模型下载目录
             )
         
         ocr_initialized = True
@@ -132,7 +149,8 @@ def ocr_recognition():
         
         # 执行 OCR 识别
         logger.info("开始执行 OCR 识别...")
-        result = ocr.ocr(img, cls=True)
+        # 移除 cls 参数，使用默认设置
+        result = ocr.ocr(img)
         
         # 处理识别结果
         if result and len(result) > 0:
