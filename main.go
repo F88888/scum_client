@@ -10,7 +10,7 @@ import (
 	"qq_client/util"
 )
 
-//go:embed config.yaml assets/ocr_setup.bat assets/ocr_setup_simple.bat assets/ocr_server.py assets/download_model.py
+//go:embed config.yaml assets/ocr_setup.bat assets/ocr_setup_simple.bat assets/ocr_server.py assets/download_model.py assets/check_models.py assets/fix_ocr_models.bat
 var File embed.FS
 
 // extractEmbeddedFiles 提取嵌入的文件到当前目录
@@ -21,6 +21,8 @@ func extractEmbeddedFiles() error {
 		"assets/ocr_setup_simple.bat": "ocr_setup_simple.bat",
 		"assets/ocr_server.py":        "ocr_server.py",
 		"assets/download_model.py":    "download_model.py",
+		"assets/check_models.py":      "check_models.py",
+		"assets/fix_ocr_models.bat":   "fix_ocr_models.bat",
 	}
 
 	for embeddedPath, outputFileName := range fileMap {

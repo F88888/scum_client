@@ -50,30 +50,51 @@ def initialize_paddleocr():
         # 设置环境变量指定模型缓存路径
         os.environ['PADDLEOCR_MODEL_PATH'] = paddle_cache_dir
         
-        # 检查自定义模型路径
-        rec_model_dir = "paddle_models/PP-OCRv5_mobile_det"
+        # 检查是否存在已下载的自定义模型
+        custom_model_paths = [
+            "paddle_models/en_PP-OCRv4_mobile_rec_infer",  # download_model.py 下载的模型
+            "paddle_models/PP-OCRv5_mobile_det",           # 旧版本路径
+        ]
         
-        if os.path.exists(rec_model_dir):
-            logger.info(f"使用自定义英文识别模型: {rec_model_dir}")
+        custom_model_found = False
+        custom_model_path = None
+        
+        for model_path in custom_model_paths:
+            if os.path.exists(model_path):
+                custom_model_found = True
+                custom_model_path = model_path
+                logger.info(f"找到自定义模型: {model_path}")
+                break
+        
+        if custom_model_found:
+            logger.info(f"使用自定义英文识别模型: {custom_model_path}")
             # 使用自定义英文识别模型
             ocr = PaddleOCR(
                 use_doc_orientation_classify=False,
                 use_doc_unwarping=False,
                 use_textline_orientation=False,
-                rec_model_dir=rec_model_dir,
+                rec_model_dir=custom_model_path,
                 show_log=False  # 减少日志输出
             )
         else:
-            logger.info("使用默认英文模型（模型将缓存到用户目录，避免重复下载）")
-            # 使用默认模型，指定语言和模型缓存
+            logger.info("使用默认英文模型（首次使用将自动下载到系统缓存目录）")
+            
+            # 设置缓存环境变量，确保模型缓存到指定位置
+            os.environ['PADDLEOCR_HOME'] = paddle_cache_dir
+            
+            # 使用默认模型，明确指定参数避免重复下载
             ocr = PaddleOCR(
                 use_doc_orientation_classify=False,
-                use_doc_unwarping=False,
+                use_doc_unwarping=False, 
                 use_textline_orientation=False,
                 lang='en',  # 明确指定英文，避免下载中文模型
                 show_log=False,  # 减少日志输出
                 use_gpu=False,  # 明确使用CPU，避免GPU相关问题
-                model_download_dir=paddle_cache_dir  # 指定模型下载目录
+                det_model_dir=None,  # 使用默认检测模型
+                rec_model_dir=None,  # 使用默认识别模型
+                cls_model_dir=None,  # 使用默认分类模型
+                use_space_char=True,  # 识别空格
+                drop_score=0.5       # 设置置信度阈值
             )
         
         ocr_initialized = True

@@ -96,7 +96,7 @@ func checkPendingCommands() bool {
 // 检查游戏当前状态
 func checkGameState(hwnd syscall.Handle) string {
 	// 1. 检查是否在登录页面
-	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(66, 395, 168, 421, "CONTINUE") == nil {
+	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hwnd, 66, 395, 168, 421, "CONTINUE") == nil {
 		return "LOGIN"
 	}
 
