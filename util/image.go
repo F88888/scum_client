@@ -11,6 +11,7 @@ import (
 	"os"
 	"qq_client/global"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -21,14 +22,14 @@ import (
 // @param: x1, y1, x2, y2 int 左上角、右下角坐标
 // @param: test string 期望识别的文本
 // @return: error
-func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hwnd syscall.Handle, x1, y1, x2, y2 int, test string) error {
+func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, x1, y1, x2, y2 int, test string) error {
 	// init
 	var i int
 	var err error
 	var imagePath string
 
 	// 提取图片
-	if imagePath, err = ScreenshotGrayscale(hwnd, x1, y1, x2, y2); err != nil {
+	if imagePath, err = ScreenshotGrayscale(hand, x1, y1, x2, y2); err != nil {
 		fmt.Println("提取图片失败", err.Error())
 		return err
 	}
@@ -122,12 +123,12 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hwnd syscall.Handle, x1, 
 // @description: 从指定区域提取所有文本（不验证特定内容）
 // @param: x1, y1, x2, y2 int 左上角、右下角坐标
 // @return: string, error
-func ExtractTextFromArea(x1, y1, x2, y2 int) (string, error) {
+func ExtractTextFromArea(hand syscall.Handle, x1, y1, x2, y2 int) (string, error) {
 	var imagePath string
 	var err error
 
 	// 提取图片
-	if imagePath, err = ScreenshotGrayscale(x1, y1, x2, y2); err != nil {
+	if imagePath, err = ScreenshotGrayscale(hand, x1, y1, x2, y2); err != nil {
 		return "", err
 	}
 	// 移除图片

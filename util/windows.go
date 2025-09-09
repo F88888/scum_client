@@ -15,6 +15,7 @@ var (
 	procGetClassName        = user32.NewProc("GetClassNameW")
 	procGetWindowText       = user32.NewProc("GetWindowTextW")
 	procGetWindowTextLength = user32.NewProc("GetWindowTextLengthW")
+	procPostMessage         = user32.NewProc("PostMessageW")
 )
 
 // FindWindow
@@ -101,4 +102,35 @@ func GetWindowText(hwnd syscall.Handle) string {
 		uintptr(length+1),
 	)
 	return syscall.UTF16ToString(text[:])
+}
+
+// SendKeyToWindow
+// @author: [Fantasia](https://www.npc0.com)
+// @function: SendKeyToWindow
+// @description: 向指定窗口发送按键消息
+// @param: hwnd syscall.Handle 窗口句柄, vkCode uint16 虚拟键码
+// @return: bool
+func SendKeyToWindow(hwnd syscall.Handle, vkCode uint16) bool {
+	const (
+		WM_KEYDOWN = 0x0100
+		WM_KEYUP   = 0x0101
+	)
+
+	// 发送按键按下消息
+	ret1, _, _ := procPostMessage.Call(
+		uintptr(hwnd),
+		WM_KEYDOWN,
+		uintptr(vkCode),
+		0,
+	)
+
+	// 发送按键释放消息
+	ret2, _, _ := procPostMessage.Call(
+		uintptr(hwnd),
+		WM_KEYUP,
+		uintptr(vkCode),
+		0,
+	)
+
+	return ret1 != 0 && ret2 != 0
 }

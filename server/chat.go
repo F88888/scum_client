@@ -112,38 +112,38 @@ func logDebug(format string, v ...interface{}) {
 }
 
 // 检查是否在聊天界面的更可靠方法
-func isChatInterfaceOpen(hwnd syscall.Handle) bool {
+func isChatInterfaceOpen(hand syscall.Handle) bool {
 	// 检查MUTE按钮是否存在（聊天界面的标志）
-	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(30, 310, 61, 325, "MUTE") == nil {
+	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand, 30, 310, 61, 325, "MUTE") == nil {
 		return true
 	}
 	return false
 }
 
 // 获取当前聊天模式
-func getCurrentChatMode(hwnd syscall.Handle) string {
-	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(233, 308, 267, 327, "GLOBAL") == nil {
+func getCurrentChatMode(hand syscall.Handle) string {
+	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand, 233, 308, 267, 327, "GLOBAL") == nil {
 		return "GLOBAL"
 	}
-	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(237, 309, 268, 328, "LOCAL") == nil {
+	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand, 237, 309, 268, 328, "LOCAL") == nil {
 		return "LOCAL"
 	}
-	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(233, 308, 267, 327, "ADMIN") == nil {
+	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand, 233, 308, 267, 327, "ADMIN") == nil {
 		return "ADMIN"
 	}
 	return "UNKNOWN"
 }
 
 // 优化的聊天框激活函数
-func ensureChatBoxActive(hwnd syscall.Handle) bool {
+func ensureChatBoxActive(hand syscall.Handle) bool {
 	logDebug("开始检查聊天框状态")
 
 	// 设置窗口为前台
-	util.SetForegroundWindow(hwnd)
+	util.SetForegroundWindow(hand)
 	time.Sleep(200 * time.Millisecond)
 
 	// 首先检查是否已经在聊天界面
-	if !isChatInterfaceOpen(hwnd) {
+	if !isChatInterfaceOpen(hand) {
 		logDebug("聊天界面未打开，尝试按T键激活")
 
 		// 先按ESC确保退出任何菜单
@@ -155,7 +155,7 @@ func ensureChatBoxActive(hwnd syscall.Handle) bool {
 		time.Sleep(500 * time.Millisecond)
 
 		// 验证是否成功激活
-		if !isChatInterfaceOpen(hwnd) {
+		if !isChatInterfaceOpen(hand) {
 			logError("按T后仍无法激活聊天界面")
 			return false
 		}
@@ -165,7 +165,7 @@ func ensureChatBoxActive(hwnd syscall.Handle) bool {
 	}
 
 	// 检查并切换到GLOBAL模式
-	currentMode := getCurrentChatMode(hwnd)
+	currentMode := getCurrentChatMode(hand)
 	logDebug("当前聊天模式: %s", currentMode)
 
 	maxAttempts := 5
@@ -188,7 +188,7 @@ func ensureChatBoxActive(hwnd syscall.Handle) bool {
 		}
 
 		// 重新检查模式
-		currentMode = getCurrentChatMode(hwnd)
+		currentMode = getCurrentChatMode(hand)
 	}
 
 	if currentMode == "GLOBAL" {

@@ -3,7 +3,7 @@ package util
 import (
 	"bytes"
 	"errors"
-	"github.com/go-vgo/robotgo"
+	"fmt"
 	"github.com/google/uuid"
 	"image"
 	"image/color"
@@ -156,15 +156,15 @@ func captureWindowImage(hwnd syscall.Handle) (*image.RGBA, error) {
 // @author: [Fantasia](https://www.npc0.com)
 // @function: 截屏取灰度图片
 // @description: 截取指定窗口句柄的图像并转换为灰度图
-// @param: hwnd syscall.Handle 窗口句柄, x1, y1, x2, y2 int 裁剪区域坐标(可选，传0表示整个窗口)
+// @param: hand syscall.Handle 窗口句柄, x1, y1, x2, y2 int 裁剪区域坐标(可选，传0表示整个窗口)
 // @return: string, error
-func ScreenshotGrayscale(hwnd syscall.Handle, x1, y1, x2, y2 int) (string, error) {
+func ScreenshotGrayscale(hand syscall.Handle, x1, y1, x2, y2 int) (string, error) {
 	// 生成文件地址
 	var f *os.File
 	var filePath = path.Join("D:/", uuid.New().String()+".png")
 
 	// 截取窗口图像
-	img, err := captureWindowImage(hwnd)
+	img, err := captureWindowImage(hand)
 	if err != nil {
 		return "", errors.New("无法截取窗口图像:" + err.Error())
 	}
@@ -225,12 +225,35 @@ func ScreenshotGrayscale(hwnd syscall.Handle, x1, y1, x2, y2 int) (string, error
 // SpecifiedCoordinateColor
 // @author: [Fantasia](https://www.npc0.com)
 // @function: 获取指定坐标颜色
-// @description: 获取指定坐标颜色
-// @param: x1, y1 int 坐标
-// @return: string
-func SpecifiedCoordinateColor(x1, y1 int) string {
-	// 获取屏幕图像
-	return robotgo.GetPixelColor(x1, y1)
+// @description: 使用窗口句柄获取指定坐标颜色
+// @param: hand syscall.Handle 窗口句柄, x1, y1 int 坐标
+// @return: string 颜色值，格式为十六进制字符串(如"FF0000")
+func SpecifiedCoordinateColor(hand syscall.Handle, x1, y1 int) string {
+	// 截取指定窗口的图像
+	img, err := captureWindowImage(hand)
+	if err != nil {
+		// 如果截取失败，返回默认颜色
+		return "000000"
+	}
+
+	// 检查坐标是否在图像范围内
+	bounds := img.Bounds()
+	if x1 < bounds.Min.X || x1 >= bounds.Max.X || y1 < bounds.Min.Y || y1 >= bounds.Max.Y {
+		// 如果坐标超出范围，返回默认颜色
+		return "000000"
+	}
+
+	// 获取指定坐标的颜色
+	color := img.At(x1, y1)
+	// 将颜色转换为 RGBA 格式
+	rgba, ok := color.(color.RGBA)
+	if !ok {
+		// 如果转换失败，返回默认颜色
+		return "000000"
+	}
+
+	// 将 RGBA 转换为十六进制字符串 (格式为 RRGGBB)
+	return fmt.Sprintf("%02X%02X%02X", rgba.R, rgba.G, rgba.B)
 }
 
 // CheckIfAppRunning
