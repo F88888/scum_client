@@ -244,13 +244,9 @@ func SpecifiedCoordinateColor(hand syscall.Handle, x1, y1 int) string {
 	}
 
 	// 获取指定坐标的颜色
-	color := img.At(x1, y1)
+	pixelColor := img.At(x1, y1)
 	// 将颜色转换为 RGBA 格式
-	rgba, ok := color.(color.RGBA)
-	if !ok {
-		// 如果转换失败，返回默认颜色
-		return "000000"
-	}
+	rgba := color.RGBAModel.Convert(pixelColor).(color.RGBA)
 
 	// 将 RGBA 转换为十六进制字符串 (格式为 RRGGBB)
 	return fmt.Sprintf("%02X%02X%02X", rgba.R, rgba.G, rgba.B)

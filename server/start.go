@@ -101,7 +101,7 @@ func checkGameState(hand syscall.Handle) string {
 	}
 
 	// 2. 检查是否在加载界面
-	if util.SpecifiedCoordinateColor(427, 142) == "ffffff" && util.SpecifiedCoordinateColor(438, 153) == "ffffff" {
+	if util.SpecifiedCoordinateColor(hand, 427, 142) == "ffffff" && util.SpecifiedCoordinateColor(hand, 438, 153) == "ffffff" {
 		return "LOADING"
 	}
 
