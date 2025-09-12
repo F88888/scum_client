@@ -70,15 +70,36 @@ func main() {
 	} else {
 		fmt.Println("OCR 服务已就绪")
 
-		// casBin config
-		if config, err := File.ReadFile("config.yaml"); err == nil {
-			// 解析配置文件
-			err = yaml.Unmarshal(config, &global.ScumConfig)
+		// 加载配置文件
+		var configData []byte
+		var err error
 
-			// 循环机器人主逻辑
-			for {
-				server.Start()
+		// 首先尝试从嵌入文件加载
+		if configData, err = File.ReadFile("config.yaml"); err != nil {
+			fmt.Printf("无法从嵌入文件加载配置: %v\n", err)
+
+			// 尝试从外部文件加载
+			if configData, err = os.ReadFile("config.yaml"); err != nil {
+				fmt.Printf("无法从外部文件加载配置: %v\n", err)
+				fmt.Println("程序将退出，请确保配置文件存在")
+				return
 			}
+			fmt.Println("从外部文件加载配置成功")
+		} else {
+			fmt.Println("从嵌入文件加载配置成功")
+		}
+
+		// 解析配置文件
+		if err = yaml.Unmarshal(configData, &global.ScumConfig); err != nil {
+			fmt.Printf("解析配置文件失败: %v\n", err)
+			return
+		}
+
+		fmt.Printf("配置加载成功 - ServerID: %d, ServerUrl: %s\n", global.ScumConfig.ServerID, global.ScumConfig.ServerUrl)
+
+		// 循环机器人主逻辑
+		for {
+			server.Start()
 		}
 	}
 }
