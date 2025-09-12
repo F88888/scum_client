@@ -33,6 +33,7 @@ go.sum
 # config file
 .env.development
 .env.production
+config.yaml
 
 # linux build
 linux_linux
