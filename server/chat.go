@@ -114,7 +114,7 @@ func logDebug(format string, v ...interface{}) {
 // 检查是否在聊天界面的更可靠方法
 func isChatInterfaceOpen(hand syscall.Handle) bool {
 	// 检查MUTE按钮是否存在（聊天界面的标志）
-	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand, 30, 310, 61, 325, "MUTE") == nil {
+	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand, "MUTE") == nil {
 		return true
 	}
 	return false
@@ -122,13 +122,13 @@ func isChatInterfaceOpen(hand syscall.Handle) bool {
 
 // 获取当前聊天模式
 func getCurrentChatMode(hand syscall.Handle) string {
-	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand, 233, 308, 267, 327, "GLOBAL") == nil {
+	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand, "GLOBAL") == nil {
 		return "GLOBAL"
 	}
-	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand, 237, 309, 268, 328, "LOCAL") == nil {
+	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand, "LOCAL") == nil {
 		return "LOCAL"
 	}
-	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand, 233, 308, 267, 327, "ADMIN") == nil {
+	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand, "ADMIN") == nil {
 		return "ADMIN"
 	}
 	return "UNKNOWN"
@@ -472,6 +472,13 @@ func getAllPendingCommands() []string {
 func executePeriodicCommands(hwnd syscall.Handle) {
 	// 检查是否到了执行时间（每分钟执行一次）
 	if time.Since(lastPeriodicCommandTime) < 60*time.Second {
+		return
+	}
+
+	// 自建服务器不执行这三个固定指令
+	if global.ScumConfig.FtpProvider == global.FtpProviderSelfBuilt {
+		logDebug("自建服务器类型，跳过定时指令执行")
+		lastPeriodicCommandTime = time.Now()
 		return
 	}
 

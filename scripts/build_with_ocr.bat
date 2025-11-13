@@ -80,7 +80,11 @@ echo ✅ 嵌入文件功能正常
 
 echo.
 echo 3. 构建主程序...
-go build -o scum_client.exe main.go
+REM 生成UUID作为文件名
+for /f "tokens=*" %%i in ('powershell -command "[System.Guid]::NewGuid().ToString()"') do set UUID=%%i
+set OUTPUT_NAME=scum_client_%UUID%.exe
+
+go build -o %OUTPUT_NAME% main.go
 if %errorlevel% neq 0 (
     echo ❌ 主程序编译失败
     pause
@@ -97,7 +101,7 @@ if exist "test_embed.go" del test_embed.go
 echo.
 echo === 构建完成 ===
 echo.
-echo 生成的可执行文件: scum_client.exe
+echo 生成的可执行文件: %OUTPUT_NAME%
 echo.
 echo 该可执行文件已包含以下嵌入文件:
 echo   - config.yaml (配置文件)
@@ -109,7 +113,7 @@ echo 使用说明:
 echo   1. 确保系统已安装 Python 3.8+
 echo      - 如未安装，运行: scripts\install_python.ps1 (需管理员权限)
 echo      - 或手动下载: https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe
-echo   2. 将 scum_client.exe 复制到任意目录
+echo   2. 将 %OUTPUT_NAME% 复制到任意目录
 echo   3. 双击运行，程序会自动提取必需的 OCR 文件
 echo   4. 首次运行会自动设置 OCR 环境
 echo   5. 后续运行将直接启动 OCR 服务

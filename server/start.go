@@ -3,6 +3,7 @@ package server
 import (
 	"github.com/go-vgo/robotgo"
 	"os/exec"
+	"qq_client/global"
 	"qq_client/util"
 	"syscall"
 	"time"
@@ -40,21 +41,18 @@ func isWindowInCorrectPosition(hand syscall.Handle) bool {
 
 // setWindowPositionOnce 只在必要时设置窗口位置
 func setWindowPositionOnce(hand syscall.Handle) {
-	targetX, targetY := 8, 31
-	targetWidth, targetHeight := 857, 593
-
 	// 如果位置已经正确，跳过设置
-	if lastWindowX == targetX && lastWindowY == targetY &&
-		lastWindowWidth == targetWidth && lastWindowHeight == targetHeight {
+	if lastWindowX == global.GameWindowX && lastWindowY == global.GameWindowY &&
+		lastWindowWidth == global.GameWindowWidth && lastWindowHeight == global.GameWindowHeight {
 		return
 	}
 
 	logInfo("设置窗口位置和大小...")
-	util.MoveWindow(hand, targetX, targetY, targetWidth, targetHeight)
+	util.MoveWindow(hand, global.GameWindowX, global.GameWindowY, global.GameWindowWidth, global.GameWindowHeight)
 
 	// 更新缓存
-	lastWindowX, lastWindowY = targetX, targetY
-	lastWindowWidth, lastWindowHeight = targetWidth, targetHeight
+	lastWindowX, lastWindowY = global.GameWindowX, global.GameWindowY
+	lastWindowWidth, lastWindowHeight = global.GameWindowWidth, global.GameWindowHeight
 
 	// 等待窗口稳定
 	time.Sleep(500 * time.Millisecond)
@@ -84,6 +82,8 @@ func ErrorReboot() {
 		hasPendingCommands = false
 		// 重置配置替换标记
 		configReplaced = false
+		// 清空文本位置缓存
+		util.ClearTextPositionCache()
 	}
 }
 
@@ -96,7 +96,7 @@ func checkPendingCommands() bool {
 // 检查游戏当前状态
 func checkGameState(hand syscall.Handle) string {
 	// 1. 检查是否在登录页面
-	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand, 66, 395, 168, 421, "CONTINUE") == nil {
+	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand, "CONTINUE") == nil {
 		return "LOGIN"
 	}
 
@@ -106,7 +106,7 @@ func checkGameState(hand syscall.Handle) string {
 	}
 
 	// 3. 检查是否在聊天界面
-	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand, 30, 310, 61, 325, "MUTE") == nil {
+	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand, "MUTE") == nil {
 		// 进一步检查聊天模式
 		currentMode := getCurrentChatMode(hand)
 		return "GAME_" + currentMode

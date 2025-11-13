@@ -6,6 +6,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"os"
 	"qq_client/global"
+	"qq_client/internal/client"
 	"qq_client/server"
 	"qq_client/util"
 )
@@ -70,6 +71,9 @@ func main() {
 	} else {
 		fmt.Println("OCR 服务已就绪")
 
+		// 清空文本位置缓存（程序启动时初始化）
+		util.ClearTextPositionCache()
+
 		// 加载配置文件
 		var configData []byte
 		var err error
@@ -96,6 +100,17 @@ func main() {
 		}
 
 		fmt.Printf("配置加载成功 - ServerID: %d, ServerUrl: %s\n", global.ScumConfig.ServerID, global.ScumConfig.ServerUrl)
+
+		// 创建客户端
+		client := client.New(&global.ScumConfig)
+
+		// 启动客户端
+		if err := client.Start(); err != nil {
+			fmt.Printf("客户端启动失败: %v\n", err)
+			return
+		}
+
+		fmt.Println("SCUM Client 启动成功")
 
 		// 循环机器人主逻辑
 		for {
