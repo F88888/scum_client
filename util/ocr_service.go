@@ -415,13 +415,25 @@ func StartOCRService() error {
 		return fmt.Errorf("未找到可用的 Python 解释器: %s", pythonExe)
 	}
 
-	// 启动 OCR 服务
-	ocrProcess = exec.Command(pythonExe, "ocr_server.py")
+	// 获取当前工作目录，确保能找到 ocr_server.py
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("获取当前工作目录失败: %v", err)
+	}
+
+	// 检查 ocr_server.py 是否存在
+	ocrServerPath := filepath.Join(currentDir, "ocr_server.py")
+	if _, err := os.Stat(ocrServerPath); os.IsNotExist(err) {
+		return fmt.Errorf("未找到 ocr_server.py 文件，请确保程序已正确提取嵌入文件")
+	}
+
+	// 启动 OCR 服务，使用绝对路径
+	ocrProcess = exec.Command(pythonExe, ocrServerPath)
+	// 设置工作目录为当前目录，确保相对路径引用正确
+	ocrProcess.Dir = currentDir
 
 	// 设置环境变量，确保能找到 python312.dll
 	if runtime.GOOS == "windows" {
-		// 获取当前工作目录
-		currentDir, _ := os.Getwd()
 		embedDirAbs := filepath.Join(currentDir, embedDir)
 
 		// 设置环境变量
@@ -494,9 +506,27 @@ func StartOCRService() error {
 		return nil
 	}
 
-	// 端口未监听，杀死进程
+	// 端口未监听，检查进程状态
 	if ocrProcess != nil && ocrProcess.Process != nil {
-		ocrProcess.Process.Kill()
+		// 检查进程是否还在运行（使用 Wait 的非阻塞方式，带超时）
+		done := make(chan error, 1)
+		go func() {
+			done <- ocrProcess.Wait()
+		}()
+		select {
+		case err := <-done:
+			// 进程已退出
+			if err != nil {
+				return fmt.Errorf("OCR 服务启动失败，进程已退出: %v。请检查日志文件 logs/ocr_service.log 查看详细错误信息。如果提示缺少模块（如 flask 或 paddleocr），请重新运行 ocr_setup.bat 安装依赖", err)
+			}
+			return fmt.Errorf("OCR 服务启动失败，进程已退出。请检查日志文件 logs/ocr_service.log 查看详细错误信息。如果提示缺少模块（如 flask 或 paddleocr），请重新运行 ocr_setup.bat 安装依赖")
+		case <-time.After(100 * time.Millisecond):
+			// 100ms 内进程未退出，说明进程还在运行但端口未监听
+			// 可能是启动时间过长或其他问题，杀死进程
+			ocrProcess.Process.Kill()
+			<-done // 等待 goroutine 完成
+			return fmt.Errorf("OCR 服务启动超时，端口未监听。请检查日志文件 logs/ocr_service.log 查看详细错误信息")
+		}
 	}
 	return fmt.Errorf("OCR 服务启动超时")
 }
@@ -576,7 +606,30 @@ func checkOCREnvironment() bool {
 		return false
 	}
 
+	// 尝试检查关键依赖是否已安装（可选检查，失败不影响返回结果）
+	if err := checkPythonDependencies(pythonExe); err != nil {
+		fmt.Printf("警告: 依赖检查失败: %v\n", err)
+		fmt.Println("如果启动失败，请重新运行 ocr_setup.bat 安装依赖")
+		// 不返回 false，因为依赖检查可能因为网络等原因失败，但环境可能已经配置好
+	}
+
 	return true
+}
+
+// checkPythonDependencies 检查 Python 依赖是否已安装
+func checkPythonDependencies(pythonExe string) error {
+	// 检查关键依赖：flask 和 paddleocr
+	cmd := exec.Command(pythonExe, "-c", "import flask; import paddleocr")
+	if runtime.GOOS == "windows" {
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	}
+	// 不输出到控制台，只检查返回值
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("缺少必要的 Python 依赖（flask 或 paddleocr）")
+	}
+	return nil
 }
 
 // SetupOCREnvironment 设置 OCR 环境

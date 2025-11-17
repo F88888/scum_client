@@ -147,3 +147,38 @@ func BringWindowToTop(hwnd syscall.Handle) bool {
 	ret, _, _ := procBringWindowToTop.Call(uintptr(hwnd))
 	return ret != 0
 }
+
+// SendMouseClickToWindow
+// @author: [Fantasia](https://www.npc0.com)
+// @function: SendMouseClickToWindow
+// @description: 向指定窗口发送鼠标点击消息（窗口内坐标）
+// @param: hwnd syscall.Handle 窗口句柄, x, y int 窗口内坐标
+// @return: bool
+func SendMouseClickToWindow(hwnd syscall.Handle, x, y int) bool {
+	const (
+		WM_LBUTTONDOWN = 0x0201
+		WM_LBUTTONUP   = 0x0202
+		MK_LBUTTON     = 0x0001
+	)
+
+	// 将坐标编码为LPARAM（低16位为x，高16位为y）
+	lParam := uintptr(x) | (uintptr(y) << 16)
+
+	// 发送鼠标按下消息
+	ret1, _, _ := procPostMessage.Call(
+		uintptr(hwnd),
+		WM_LBUTTONDOWN,
+		MK_LBUTTON,
+		lParam,
+	)
+
+	// 发送鼠标释放消息
+	ret2, _, _ := procPostMessage.Call(
+		uintptr(hwnd),
+		WM_LBUTTONUP,
+		0,
+		lParam,
+	)
+
+	return ret1 != 0 && ret2 != 0
+}
