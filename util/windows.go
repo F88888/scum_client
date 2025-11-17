@@ -369,7 +369,7 @@ func ClickWindowUsingHandleEnhanced(hwnd syscall.Handle, x, y int) bool {
 	)
 
 	// 7. 发送鼠标按下消息（使用 MK_LBUTTON 标志）
-	ret1, _, _ := procSendMessage.Call(
+	ret1, _, errDown := procSendMessage.Call(
 		uintptr(hwnd),
 		WM_LBUTTONDOWN,
 		MK_LBUTTON,
@@ -385,7 +385,7 @@ func ClickWindowUsingHandleEnhanced(hwnd syscall.Handle, x, y int) bool {
 	)
 
 	// 9. 发送鼠标释放消息
-	ret2, _, _ := procSendMessage.Call(
+	ret2, _, errUp := procSendMessage.Call(
 		uintptr(hwnd),
 		WM_LBUTTONUP,
 		0,
@@ -400,13 +400,15 @@ func ClickWindowUsingHandleEnhanced(hwnd syscall.Handle, x, y int) bool {
 		lParam,
 	)
 
-	success := ret1 != 0 && ret2 != 0
+	success := ret1 != 0 || ret2 != 0
 	if success {
 		fmt.Printf("[ClickWindowUsingHandleEnhanced] 基于句柄的增强点击成功: 坐标 (%d, %d)\n", x, y)
-	} else {
-		fmt.Printf("[ClickWindowUsingHandleEnhanced] 基于句柄的增强点击失败: 坐标 (%d, %d), ret1=%d, ret2=%d\n", x, y, ret1, ret2)
+		return true
 	}
-	return success
+
+	fmt.Printf("[ClickWindowUsingHandleEnhanced] 句柄消息返回0，尝试使用SendInput注入: 坐标 (%d, %d), ret1=%d, ret2=%d, errDown=%v, errUp=%v\n",
+		x, y, ret1, ret2, errDown, errUp)
+	return clickWindowUsingSendInput(hwnd, x, y)
 }
 
 // ClickWindowEnhanced
@@ -418,4 +420,49 @@ func ClickWindowUsingHandleEnhanced(hwnd syscall.Handle, x, y int) bool {
 func ClickWindowEnhanced(hwnd syscall.Handle, x, y int) bool {
 	fmt.Printf("[ClickWindowEnhanced] 尝试点击坐标 (%d, %d)...\n", x, y)
 	return ClickWindowUsingHandleEnhanced(hwnd, x, y)
+}
+
+func clickWindowUsingSendInput(hwnd syscall.Handle, x, y int) bool {
+	const (
+		INPUT_MOUSE          = 0
+		MOUSEEVENTF_LEFTDOWN = 0x0002
+		MOUSEEVENTF_LEFTUP   = 0x0004
+	)
+
+	screenX, screenY := ClientToScreen(hwnd, x, y)
+	origX, origY := GetCursorPos()
+
+	if !SetCursorPos(screenX, screenY) {
+		fmt.Printf("[ClickWindowUsingHandleEnhanced] SendInput回退失败: 无法移动鼠标到屏幕坐标 (%d, %d)\n", screenX, screenY)
+		return false
+	}
+	defer SetCursorPos(origX, origY)
+
+	inputs := []INPUT{
+		{
+			Type: INPUT_MOUSE,
+			Mi: MOUSEINPUT{
+				DwFlags: MOUSEEVENTF_LEFTDOWN,
+			},
+		},
+		{
+			Type: INPUT_MOUSE,
+			Mi: MOUSEINPUT{
+				DwFlags: MOUSEEVENTF_LEFTUP,
+			},
+		},
+	}
+
+	ret, _, err := procSendInput.Call(
+		uintptr(len(inputs)),
+		uintptr(unsafe.Pointer(&inputs[0])),
+		unsafe.Sizeof(inputs[0]),
+	)
+	if ret == 0 {
+		fmt.Printf("[ClickWindowUsingHandleEnhanced] SendInput回退失败: %v\n", err)
+		return false
+	}
+
+	fmt.Printf("[ClickWindowUsingHandleEnhanced] SendInput回退点击成功: 屏幕坐标 (%d, %d)\n", screenX, screenY)
+	return true
 }
