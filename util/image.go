@@ -235,6 +235,7 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 	// 检查缓存（使用原始key）
 	cache, exists := getTextPositionFromCache(test)
 
+	var isNewlyFound bool
 	if !exists {
 		// 首次搜索，使用全屏搜索
 		textVariants := getMultilingualTexts(test)
@@ -247,12 +248,22 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 		// 保存到缓存
 		setTextPositionCache(test, newCache)
 		cache = newCache
+		isNewlyFound = true
+		fmt.Printf("全屏搜索成功找到文本 '%s'，位置已缓存\n", test)
 	} else {
 		fmt.Printf("使用缓存位置搜索文本 '%s': [%d,%d,%d,%d]\n",
 			test, cache.X1, cache.Y1, cache.X2, cache.Y2)
+		isNewlyFound = false
 	}
 
-	// 使用缓存的位置进行识别
+	// 如果全屏搜索刚找到文本，直接返回成功（全屏搜索已经验证了文本存在）
+	if isNewlyFound {
+		return nil
+	}
+
+	// 使用缓存的位置进行识别（仅在使用已有缓存时验证）
+	var ocrVerified bool
+	var hasSuccessfulScreenshot bool
 	for i := 1; i <= 3; i++ {
 		// 截图指定区域
 		imagePath, err := ScreenshotGrayscale(hand, cache.X1, cache.Y1, cache.X2, cache.Y2)
@@ -261,6 +272,7 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 			continue
 		}
 		defer os.Remove(imagePath)
+		hasSuccessfulScreenshot = true
 
 		// 读取图片
 		imageData, err := os.ReadFile(imagePath)
@@ -333,11 +345,13 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 						variantUpper := strings.ToUpper(strings.TrimSpace(variant))
 						if strings.Contains(textUpper, variantUpper) || strings.Contains(variantUpper, textUpper) {
 							fmt.Printf("第%d次验证成功: 找到目标文字 '%s' (识别为: '%s')\n", i, test, text)
+							ocrVerified = true
 							return nil
 						}
 					}
 				}
 			}
+			ocrVerified = true // OCR成功识别了文本，只是不匹配
 		}
 
 		// 如果识别失败，等待后重试
@@ -346,13 +360,23 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 		}
 	}
 
-	// 三次验证都失败，可能位置已变化，清除缓存
-	fmt.Printf("验证失败: 未找到文本 '%s'，清除缓存\n", test)
-	cacheMutex.Lock()
-	delete(textPositionCache, test)
-	cacheMutex.Unlock()
-
-	return errors.New("找不到指定文本")
+	// 判断失败原因
+	if !hasSuccessfulScreenshot {
+		// 如果所有截图都失败，保留缓存（位置可能是正确的，只是截图功能有问题）
+		fmt.Printf("验证失败: 所有截图都失败，保留缓存位置 '%s'\n", test)
+		return errors.New("截图失败，无法验证文本")
+	} else if ocrVerified {
+		// 如果OCR成功识别了文本，但文本不匹配，说明位置可能已变化，清除缓存
+		fmt.Printf("验证失败: OCR识别成功但文本不匹配，清除缓存 '%s'\n", test)
+		cacheMutex.Lock()
+		delete(textPositionCache, test)
+		cacheMutex.Unlock()
+		return errors.New("文本位置已变化，缓存已清除")
+	} else {
+		// OCR识别失败，可能是临时问题，保留缓存
+		fmt.Printf("验证失败: OCR识别失败，保留缓存位置 '%s'\n", test)
+		return errors.New("OCR识别失败，无法验证文本")
+	}
 }
 
 // ExtractTextFromArea

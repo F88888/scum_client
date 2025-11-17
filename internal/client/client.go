@@ -24,8 +24,8 @@ type Client struct {
 
 // Message types for WebSocket communication
 const (
-	MsgTypeAuth         = "auth"
-	MsgTypeHeartbeat    = "heartbeat"
+	MsgTypeAuth         = "client_auth"      // 与后端保持一致
+	MsgTypeHeartbeat    = "client_heartbeat" // 与后端保持一致
 	MsgTypeClientUpdate = "client_update"
 	MsgTypeClientStatus = "client_status"
 )
