@@ -3,6 +3,7 @@ package util
 import (
 	"fmt"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -20,6 +21,9 @@ var (
 	procIsWindowVisible     = user32.NewProc("IsWindowVisible")
 	procIsIconic            = user32.NewProc("IsIconic")
 	procShowWindow          = user32.NewProc("ShowWindow")
+	procClientToScreen      = user32.NewProc("ClientToScreen")
+	procSetCursorPos        = user32.NewProc("SetCursorPos")
+	procSendInput           = user32.NewProc("SendInput")
 )
 
 // FindWindow
@@ -139,13 +143,117 @@ func SendKeyToWindow(hwnd syscall.Handle, vkCode uint16) bool {
 	return ret1 != 0 && ret2 != 0
 }
 
+// POINT 结构体用于坐标转换
+type POINT struct {
+	X, Y int32
+}
+
+// INPUT 结构体用于 SendInput
+type INPUT struct {
+	Type uint32
+	Mi   MOUSEINPUT
+}
+
+// MOUSEINPUT 鼠标输入结构体
+type MOUSEINPUT struct {
+	Dx          int32
+	Dy          int32
+	MouseData   uint32
+	DwFlags     uint32
+	Time        uint32
+	DwExtraInfo uintptr
+}
+
 // ClickWindow
 // @author: [Fantasia](https://www.npc0.com)
 // @function: ClickWindow
-// @description: 向指定窗口发送鼠标点击消息（使用窗口内坐标）
+// @description: 向指定窗口发送鼠标点击消息（使用窗口内坐标，优先使用真实鼠标输入）
 // @param: hwnd syscall.Handle 窗口句柄, x, y int 窗口内坐标
 // @return: bool
 func ClickWindow(hwnd syscall.Handle, x, y int) bool {
+	// 先尝试使用真实鼠标输入（适用于游戏窗口）
+	if clickWindowWithRealInput(hwnd, x, y) {
+		return true
+	}
+
+	// 如果真实输入失败，回退到窗口消息方式
+	return clickWindowWithMessage(hwnd, x, y)
+}
+
+// clickWindowWithRealInput 使用真实鼠标输入进行点击（适用于游戏窗口）
+// @description: 将窗口坐标转换为屏幕坐标，然后使用 SendInput 发送真实的鼠标点击事件
+// @param: hwnd syscall.Handle 窗口句柄, x, y int 窗口内坐标
+// @return: bool
+func clickWindowWithRealInput(hwnd syscall.Handle, x, y int) bool {
+	// 确保窗口可见并激活
+	if !EnsureWindowVisible(hwnd) {
+		fmt.Printf("[ClickWindow] 窗口不可见或无法激活\n")
+		return false
+	}
+
+	// 再次确保窗口在前台（游戏窗口可能需要多次尝试）
+	SetForegroundWindow(hwnd)
+	time.Sleep(50 * time.Millisecond)
+
+	// 将窗口客户区坐标转换为屏幕坐标
+	var pt POINT
+	pt.X = int32(x)
+	pt.Y = int32(y)
+	ret, _, _ := procClientToScreen.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&pt)))
+	if ret == 0 {
+		fmt.Printf("[ClickWindow] 坐标转换失败\n")
+		return false
+	}
+
+	screenX := int(pt.X)
+	screenY := int(pt.Y)
+
+	// 移动鼠标到目标位置
+	ret, _, _ = procSetCursorPos.Call(uintptr(screenX), uintptr(screenY))
+	if ret == 0 {
+		fmt.Printf("[ClickWindow] 移动鼠标失败\n")
+		return false
+	}
+
+	// 等待一小段时间确保鼠标移动完成
+	time.Sleep(10 * time.Millisecond)
+
+	// 使用 SendInput 发送鼠标按下和释放事件
+	const (
+		INPUT_MOUSE          = 0
+		MOUSEEVENTF_LEFTDOWN = 0x0002
+		MOUSEEVENTF_LEFTUP   = 0x0004
+	)
+
+	// 发送鼠标按下事件
+	var inputDown INPUT
+	inputDown.Type = INPUT_MOUSE
+	inputDown.Mi.DwFlags = MOUSEEVENTF_LEFTDOWN
+	ret1, _, _ := procSendInput.Call(1, uintptr(unsafe.Pointer(&inputDown)), uintptr(unsafe.Sizeof(INPUT{})))
+
+	// 短暂延迟（模拟真实点击）
+	time.Sleep(20 * time.Millisecond)
+
+	// 发送鼠标释放事件
+	var inputUp INPUT
+	inputUp.Type = INPUT_MOUSE
+	inputUp.Mi.DwFlags = MOUSEEVENTF_LEFTUP
+	ret2, _, _ := procSendInput.Call(1, uintptr(unsafe.Pointer(&inputUp)), uintptr(unsafe.Sizeof(INPUT{})))
+
+	success := ret1 != 0 && ret2 != 0
+	if success {
+		fmt.Printf("[ClickWindow] 真实鼠标点击成功: 窗口坐标 (%d, %d) -> 屏幕坐标 (%d, %d)\n", x, y, screenX, screenY)
+	} else {
+		fmt.Printf("[ClickWindow] 真实鼠标点击失败: 窗口坐标 (%d, %d), SendInput返回: %d, %d\n", x, y, ret1, ret2)
+	}
+	return success
+}
+
+// clickWindowWithMessage 使用窗口消息进行点击（回退方案）
+// @description: 使用 PostMessage 发送窗口消息（适用于普通窗口）
+// @param: hwnd syscall.Handle 窗口句柄, x, y int 窗口内坐标
+// @return: bool
+func clickWindowWithMessage(hwnd syscall.Handle, x, y int) bool {
 	const (
 		WM_LBUTTONDOWN = 0x0201
 		WM_LBUTTONUP   = 0x0202
@@ -172,9 +280,9 @@ func ClickWindow(hwnd syscall.Handle, x, y int) bool {
 
 	success := ret1 != 0 && ret2 != 0
 	if success {
-		fmt.Printf("[ClickWindow] 点击成功: 坐标 (%d, %d), WM_LBUTTONDOWN返回: %d, WM_LBUTTONUP返回: %d\n", x, y, ret1, ret2)
+		fmt.Printf("[ClickWindow] 窗口消息点击成功: 坐标 (%d, %d), WM_LBUTTONDOWN返回: %d, WM_LBUTTONUP返回: %d\n", x, y, ret1, ret2)
 	} else {
-		fmt.Printf("[ClickWindow] 点击失败: 坐标 (%d, %d), WM_LBUTTONDOWN返回: %d, WM_LBUTTONUP返回: %d\n", x, y, ret1, ret2)
+		fmt.Printf("[ClickWindow] 窗口消息点击失败: 坐标 (%d, %d), WM_LBUTTONDOWN返回: %d, WM_LBUTTONUP返回: %d\n", x, y, ret1, ret2)
 	}
 	return success
 }

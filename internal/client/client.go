@@ -66,7 +66,6 @@ func (c *Client) Start() error {
 	wsClient.SetCallbacks(
 		func() {
 			// 连接成功后自动发送认证
-			fmt.Printf("[Client] WebSocket连接成功，正在发送认证消息...\n")
 			authMsg := request.WebSocketMessage{
 				Type: MsgTypeAuth,
 				Data: map[string]interface{}{
@@ -74,19 +73,15 @@ func (c *Client) Start() error {
 					"token":     "scum_client_token", // 这里应该使用实际的token
 				},
 			}
-			fmt.Printf("[Client] 发送认证消息: Type=%s, ServerID=%d\n", authMsg.Type, c.config.ServerID)
 			if err = wsClient.SendMessage(authMsg); err != nil {
-				fmt.Printf("[Client] 发送认证消息失败: %v\n", err)
-			} else {
-				fmt.Printf("[Client] 认证消息发送成功\n")
+				fmt.Printf("Failed to send authentication: %v\n", err)
 			}
 		},
 		func() {
-			fmt.Printf("[Client] WebSocket连接断开\n")
+			fmt.Println("WebSocket disconnected")
 		},
 		func() {
 			// 重连成功后重新发送认证
-			fmt.Printf("[Client] WebSocket重连成功，正在重新发送认证消息...\n")
 			authMsg := request.WebSocketMessage{
 				Type: MsgTypeAuth,
 				Data: map[string]interface{}{
@@ -94,11 +89,8 @@ func (c *Client) Start() error {
 					"token":     "scum_client_token", // 这里应该使用实际的token
 				},
 			}
-			fmt.Printf("[Client] 重新发送认证消息: Type=%s, ServerID=%d\n", authMsg.Type, c.config.ServerID)
 			if err = wsClient.SendMessage(authMsg); err != nil {
-				fmt.Printf("[Client] 重新发送认证消息失败: %v\n", err)
-			} else {
-				fmt.Printf("[Client] 重新认证消息发送成功\n")
+				fmt.Printf("Failed to send re-authentication: %v\n", err)
 			}
 		},
 	)
@@ -161,37 +153,35 @@ func (c *Client) handleMessages() {
 
 // handleMessage handles a single WebSocket message
 func (c *Client) handleMessage(msg request.WebSocketMessage) {
-	fmt.Printf("[Client] 收到WebSocket消息: Type=%s, Success=%v\n", msg.Type, msg.Success)
+	fmt.Printf("Received WebSocket message: type=%s\n", msg.Type)
 
 	switch msg.Type {
 	case MsgTypeAuth:
 		c.handleAuthResponse(msg)
 	case MsgTypeHeartbeat:
 		// Heartbeat messages from server are handled silently
-		fmt.Printf("[Client] 收到心跳消息，正在响应...\n")
 		c.handleHeartbeat(msg)
 	case MsgTypeClientUpdate:
 		c.handleClientUpdate(msg.Data)
 	default:
-		fmt.Printf("[Client] 未知消息类型: %s\n", msg.Type)
+		fmt.Printf("Unknown message type: %s\n", msg.Type)
 	}
 }
 
 // handleAuthResponse handles authentication response
 func (c *Client) handleAuthResponse(msg request.WebSocketMessage) {
-	fmt.Printf("[Client] 收到认证响应: Success=%v, Error=%s\n", msg.Success, msg.Error)
 	if msg.Success {
-		fmt.Printf("[Client] 认证成功！\n")
+		fmt.Println("Authentication successful")
 
 		// 从响应中获取服务器类型并保存到配置
 		if data, ok := msg.Data.(map[string]interface{}); ok {
 			if ftpProvider, ok := data["ftp_provider"].(float64); ok {
 				c.config.FtpProvider = int(ftpProvider)
-				fmt.Printf("[Client] 服务器FTP提供商类型已保存: %d\n", c.config.FtpProvider)
+				fmt.Printf("Server FTP Provider type saved: %d\n", c.config.FtpProvider)
 			}
 		}
 	} else {
-		fmt.Printf("[Client] 认证失败: %s\n", msg.Error)
+		fmt.Printf("Authentication failed: %s\n", msg.Error)
 	}
 }
 
