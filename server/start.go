@@ -216,7 +216,10 @@ func Start() {
 
 		// 点击登录
 		logInfo("开始登录...")
-		robotgo.MoveClick(97, 405, "enter", false)
+		if err := util.ClickTextCenter(hand, "CONTINUE"); err != nil {
+			logError("点击CONTINUE失败: %v", err)
+			errorNumber++
+		}
 		time.Sleep(1 * time.Second)
 		return
 

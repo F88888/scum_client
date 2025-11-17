@@ -134,3 +134,37 @@ func SendKeyToWindow(hwnd syscall.Handle, vkCode uint16) bool {
 
 	return ret1 != 0 && ret2 != 0
 }
+
+// ClickWindow
+// @author: [Fantasia](https://www.npc0.com)
+// @function: ClickWindow
+// @description: 向指定窗口发送鼠标点击消息（使用窗口内坐标）
+// @param: hwnd syscall.Handle 窗口句柄, x, y int 窗口内坐标
+// @return: bool
+func ClickWindow(hwnd syscall.Handle, x, y int) bool {
+	const (
+		WM_LBUTTONDOWN = 0x0201
+		WM_LBUTTONUP   = 0x0202
+	)
+
+	// 将坐标打包到lParam中：lParam = (y << 16) | (x & 0xFFFF)
+	lParam := uintptr((uint32(y) << 16) | (uint32(x) & 0xFFFF))
+
+	// 发送鼠标按下消息
+	ret1, _, _ := procPostMessage.Call(
+		uintptr(hwnd),
+		WM_LBUTTONDOWN,
+		0, // wParam: MK_LBUTTON (0x0001) 可以设为0，因为PostMessage不需要
+		lParam,
+	)
+
+	// 发送鼠标释放消息
+	ret2, _, _ := procPostMessage.Call(
+		uintptr(hwnd),
+		WM_LBUTTONUP,
+		0,
+		lParam,
+	)
+
+	return ret1 != 0 && ret2 != 0
+}

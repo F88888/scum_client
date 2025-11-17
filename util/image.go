@@ -479,3 +479,35 @@ func ExtractTextFromArea(hand syscall.Handle, x1, y1, x2, y2 int) (string, error
 		return "", fmt.Errorf("OCR识别失败，错误代码: %d，错误信息: %s", ocrResult.Code, dataStr)
 	}
 }
+
+// ClickTextCenter
+// @author: [Fantasia](https://www.npc0.com)
+// @function: ClickTextCenter
+// @description: 点击文本中心位置（使用窗口句柄）
+// @param: hand syscall.Handle 窗口句柄
+// @param: text string 目标文本
+// @return: error
+func ClickTextCenter(hand syscall.Handle, text string) error {
+	// 获取文本位置（从缓存或全屏搜索）
+	cache, exists := getTextPositionFromCache(text)
+	if !exists {
+		// 首次搜索，使用全屏搜索
+		newCache, err := searchTextInFullScreen(hand, text)
+		if err != nil {
+			return err
+		}
+		// 保存到缓存
+		setTextPositionCache(text, newCache)
+		cache = newCache
+	}
+
+	// 计算中心坐标（窗口内坐标）
+	centerX := (cache.X1 + cache.X2) / 2
+	centerY := (cache.Y1 + cache.Y2) / 2
+
+	// 使用窗口句柄直接点击（不需要坐标转换）
+	if !ClickWindow(hand, centerX, centerY) {
+		return fmt.Errorf("点击窗口失败")
+	}
+	return nil
+}
