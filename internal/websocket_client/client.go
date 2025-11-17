@@ -308,7 +308,7 @@ func (c *Client) heartbeatLoop() {
 		case <-ticker.C:
 			if c.IsConnected() {
 				heartbeatMsg := map[string]interface{}{
-					"type": "heartbeat",
+					"type": "client_heartbeat", // 与后端保持一致
 					"data": map[string]interface{}{
 						"timestamp": time.Now().Unix(),
 					},

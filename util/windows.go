@@ -170,7 +170,13 @@ func ClickWindow(hwnd syscall.Handle, x, y int) bool {
 		lParam,
 	)
 
-	return ret1 != 0 && ret2 != 0
+	success := ret1 != 0 && ret2 != 0
+	if success {
+		fmt.Printf("[ClickWindow] 点击成功: 坐标 (%d, %d), WM_LBUTTONDOWN返回: %d, WM_LBUTTONUP返回: %d\n", x, y, ret1, ret2)
+	} else {
+		fmt.Printf("[ClickWindow] 点击失败: 坐标 (%d, %d), WM_LBUTTONDOWN返回: %d, WM_LBUTTONUP返回: %d\n", x, y, ret1, ret2)
+	}
+	return success
 }
 
 // IsWindow

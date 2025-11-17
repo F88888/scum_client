@@ -251,8 +251,9 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 		isNewlyFound = true
 		fmt.Printf("全屏搜索成功找到文本 '%s'，位置已缓存\n", test)
 	} else {
-		fmt.Printf("使用缓存位置搜索文本 '%s': [%d,%d,%d,%d]\n",
-			test, cache.X1, cache.Y1, cache.X2, cache.Y2)
+		textVariants := getMultilingualTexts(test)
+		fmt.Printf("使用缓存位置搜索文本 '%s' (支持多语言: %v): [%d,%d,%d,%d]\n",
+			test, textVariants, cache.X1, cache.Y1, cache.X2, cache.Y2)
 		isNewlyFound = false
 	}
 
@@ -327,11 +328,12 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 		}
 
 		// 检查识别结果
+		textVariants := getMultilingualTexts(test)
 		if ocrResult.Code == 100 {
 			// 识别成功，检查是否包含目标文本（支持多语言）
 			dataArray, ok := ocrResult.Data.([]interface{})
 			if ok {
-				textVariants := getMultilingualTexts(test)
+				fmt.Printf("第%d次OCR识别成功，正在验证多语言文本 '%s' (支持: %v)...\n", i, test, textVariants)
 				for _, item := range dataArray {
 					itemMap, ok := item.(map[string]interface{})
 					if !ok {
@@ -350,8 +352,12 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 						}
 					}
 				}
+				fmt.Printf("第%d次OCR识别成功但文本不匹配，已尝试多语言: %v\n", i, textVariants)
 			}
 			ocrVerified = true // OCR成功识别了文本，只是不匹配
+		} else {
+			// OCR识别失败，记录尝试的多语言文本
+			fmt.Printf("第%d次OCR识别失败 (Code: %d)，目标文本 '%s' (支持多语言: %v)\n", i, ocrResult.Code, test, textVariants)
 		}
 
 		// 如果识别失败，等待后重试
@@ -492,22 +498,29 @@ func ClickTextCenter(hand syscall.Handle, text string) error {
 	cache, exists := getTextPositionFromCache(text)
 	if !exists {
 		// 首次搜索，使用全屏搜索
+		fmt.Printf("点击文本 '%s': 首次搜索，使用全屏搜索...\n", text)
 		newCache, err := searchTextInFullScreen(hand, text)
 		if err != nil {
-			return err
+			return fmt.Errorf("全屏搜索文本 '%s' 失败: %v", text, err)
 		}
 		// 保存到缓存
 		setTextPositionCache(text, newCache)
 		cache = newCache
+	} else {
+		fmt.Printf("点击文本 '%s': 使用缓存位置 [%d,%d,%d,%d]\n", text, cache.X1, cache.Y1, cache.X2, cache.Y2)
 	}
 
 	// 计算中心坐标（窗口内坐标）
 	centerX := (cache.X1 + cache.X2) / 2
 	centerY := (cache.Y1 + cache.Y2) / 2
+	fmt.Printf("点击文本 '%s': 计算中心坐标 (%d, %d) (文本区域: [%d,%d,%d,%d])\n",
+		text, centerX, centerY, cache.X1, cache.Y1, cache.X2, cache.Y2)
 
 	// 使用窗口句柄直接点击（不需要坐标转换）
+	fmt.Printf("点击文本 '%s': 正在点击坐标 (%d, %d)...\n", text, centerX, centerY)
 	if !ClickWindow(hand, centerX, centerY) {
-		return fmt.Errorf("点击窗口失败")
+		return fmt.Errorf("点击窗口失败: 坐标 (%d, %d)", centerX, centerY)
 	}
+	fmt.Printf("点击文本 '%s': 点击成功，坐标 (%d, %d)\n", text, centerX, centerY)
 	return nil
 }
