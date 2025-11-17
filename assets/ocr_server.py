@@ -68,12 +68,12 @@ def initialize_paddleocr():
         
         if custom_model_found:
             logger.info(f"使用自定义英文识别模型: {custom_model_path}")
-            # 使用自定义英文识别模型
+            # 使用自定义英文识别模型 - 仅使用 PaddleOCR 3.0.0 支持的参数
             ocr = PaddleOCR(
                 use_doc_orientation_classify=False,
                 use_doc_unwarping=False,
                 use_textline_orientation=False,
-                rec_model_dir=custom_model_path,
+                text_recognition_model_dir=custom_model_path,
                 show_log=False  # 减少日志输出
             )
         else:
@@ -82,7 +82,8 @@ def initialize_paddleocr():
             # 设置缓存环境变量，确保模型缓存到指定位置
             os.environ['PADDLEOCR_HOME'] = paddle_cache_dir
             
-            # 使用默认模型，明确指定参数避免重复下载
+            # 使用默认模型 - 仅使用 PaddleOCR 3.0.0 支持的参数
+            # 注意：已移除 use_space_char 等已弃用参数
             ocr = PaddleOCR(
                 use_doc_orientation_classify=False,
                 use_doc_unwarping=False, 
@@ -90,11 +91,7 @@ def initialize_paddleocr():
                 lang='en',  # 明确指定英文，避免下载中文模型
                 show_log=False,  # 减少日志输出
                 use_gpu=False,  # 明确使用CPU，避免GPU相关问题
-                det_model_dir=None,  # 使用默认检测模型
-                rec_model_dir=None,  # 使用默认识别模型
-                cls_model_dir=None,  # 使用默认分类模型
-                use_space_char=True,  # 识别空格
-                drop_score=0.5       # 设置置信度阈值
+                drop_score=0.5  # 设置置信度阈值
             )
         
         ocr_initialized = True
@@ -170,7 +167,6 @@ def ocr_recognition():
         
         # 执行 OCR 识别
         logger.info("开始执行 OCR 识别...")
-        # 移除 cls 参数，使用默认设置
         result = ocr.ocr(img)
         
         # 处理识别结果
@@ -219,4 +215,4 @@ if __name__ == '__main__':
         port=1224,
         debug=False,
         threaded=True
-    ) 
+    )
