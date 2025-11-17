@@ -442,6 +442,10 @@ func StartOCRService() error {
 		pathEnv := fmt.Sprintf("PATH=%s;%s", embedDirAbs, os.Getenv("PATH"))
 		env = append(env, pathEnv)
 
+		// 设置 PYTHONHOME 指向嵌入式 Python 根目录，确保 Python 能正确找到标准库
+		pythonHome := fmt.Sprintf("PYTHONHOME=%s", embedDirAbs)
+		env = append(env, pythonHome)
+
 		// 设置 PYTHONPATH 确保模块能被找到
 		pythonPath := fmt.Sprintf("PYTHONPATH=%s;%s",
 			filepath.Join(embedDirAbs, "Lib"),
