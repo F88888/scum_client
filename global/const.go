@@ -15,3 +15,9 @@ const (
 	GameWindowWidth  = 857 // 游戏窗口宽度
 	GameWindowHeight = 593 // 游戏窗口高度
 )
+
+const (
+	// OCR 服务相关常量
+	OCRServiceHost = "127.0.0.1" // OCR 服务主机地址
+	OCRServicePort = 1224        // OCR 服务端口号
+)

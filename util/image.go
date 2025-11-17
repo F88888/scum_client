@@ -9,11 +9,13 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"qq_client/global"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	"scum_client/global"
+	_const "scum_client/internal/const"
 )
 
 // TextPositionCache 文本位置缓存结构
@@ -100,8 +102,9 @@ func searchTextInFullScreen(hand syscall.Handle, targetText string) (*TextPositi
 	}
 
 	// 发送POST请求到PaddleOCR服务
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Post("http://127.0.0.1:1224/api/ocr",
+	client := &http.Client{Timeout: _const.OCRServiceAPITimeout}
+	ocrAPIURL := fmt.Sprintf("http://%s:%d/api/ocr", global.OCRServiceHost, global.OCRServicePort)
+	resp, err := client.Post(ocrAPIURL,
 		"application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("发送请求失败: %v", err)
@@ -258,8 +261,9 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 		}
 
 		// 发送POST请求到PaddleOCR服务
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Post("http://127.0.0.1:1224/api/ocr",
+		client := &http.Client{Timeout: _const.OCRServiceAPITimeout}
+		ocrAPIURL := fmt.Sprintf("http://%s:%d/api/ocr", global.OCRServiceHost, global.OCRServicePort)
+		resp, err := client.Post(ocrAPIURL,
 			"application/json", bytes.NewBuffer(jsonData))
 		if err != nil {
 			fmt.Printf("第%d次发送请求失败: %v\n", i, err)
@@ -364,8 +368,9 @@ func ExtractTextFromArea(hand syscall.Handle, x1, y1, x2, y2 int) (string, error
 	}
 
 	// 发送POST请求到PaddleOCR服务
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Post("http://127.0.0.1:1224/api/ocr",
+	client := &http.Client{Timeout: _const.OCRServiceAPITimeout}
+	ocrAPIURL := fmt.Sprintf("http://%s:%d/api/ocr", global.OCRServiceHost, global.OCRServicePort)
+	resp, err := client.Post(ocrAPIURL,
 		"application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return "", fmt.Errorf("发送请求失败: %v", err)

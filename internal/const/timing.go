@@ -23,4 +23,11 @@ const (
 	ReadBufferSize  = 128 * 1024      // 读取缓冲区大小
 	WriteBufferSize = 128 * 1024      // 写入缓冲区大小
 	MaxMessageSize  = 2 * 1024 * 1024 // 最大消息大小
+
+	// OCR 服务相关时间常量
+	OCRServiceMaxWaitTime        = 60 * time.Second // OCR 服务最大等待时间
+	OCRServicePortCheckTimeout   = 1 * time.Second  // OCR 服务端口检测超时时间
+	OCRServiceHealthCheckTimeout = 3 * time.Second  // OCR 服务健康检查超时时间
+	OCRServiceRestartWaitTime    = 2 * time.Second  // OCR 服务重启等待时间
+	OCRServiceAPITimeout         = 10 * time.Second // OCR 服务 API 请求超时时间
 )

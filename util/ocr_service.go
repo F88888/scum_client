@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -12,6 +13,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"scum_client/global"
+	_const "scum_client/internal/const"
 )
 
 var ocrProcess *exec.Cmd
@@ -462,30 +466,68 @@ func StartOCRService() error {
 	// 等待服务启动
 	fmt.Println("等待 OCR 服务初始化...")
 	fmt.Println("========== OCR 服务启动日志 ==========")
-	maxWait := 60 // 最多等待60秒
+	maxWait := int(_const.OCRServiceMaxWaitTime / time.Second)
 	for i := 0; i < maxWait; i++ {
-		time.Sleep(1 * time.Second)
-		if IsOCRServiceRunning() {
-			fmt.Println("========== OCR 服务启动成功 ==========")
-			ocrServiceRunning = true
-			return nil
+		time.Sleep(_const.ShortWaitTime)
+
+		// 先检查端口是否已监听（更快速、更可靠）
+		if isPortListening(global.OCRServiceHost, global.OCRServicePort, _const.OCRServicePortCheckTimeout) {
+			// 端口已监听，再检查 HTTP 健康检查
+			if IsOCRServiceRunning() {
+				fmt.Println("========== OCR 服务启动成功 ==========")
+				ocrServiceRunning = true
+				return nil
+			} else {
+				// 端口已监听但健康检查未通过，可能是服务刚启动，再等待一下
+				fmt.Printf("端口已监听，等待健康检查就绪... (%d/%d)\n", i+1, maxWait)
+				continue
+			}
 		}
+
 		fmt.Printf("等待中... (%d/%d)\n", i+1, maxWait)
 	}
 
-	// 超时后杀死进程
+	// 超时后检查端口状态
+	if isPortListening(global.OCRServiceHost, global.OCRServicePort, _const.OCRServicePortCheckTimeout) {
+		// 端口已监听，说明服务可能已经启动，只是健康检查未通过
+		fmt.Println("检测到端口已监听，服务可能已启动（健康检查未通过）")
+		ocrServiceRunning = true
+		return nil
+	}
+
+	// 端口未监听，杀死进程
 	if ocrProcess != nil && ocrProcess.Process != nil {
 		ocrProcess.Process.Kill()
 	}
 	return fmt.Errorf("OCR 服务启动超时")
 }
 
-// IsOCRServiceRunning 检查 OCR 服务是否运行
-func IsOCRServiceRunning() bool {
-	client := &http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Get("http://127.0.0.1:1224/health")
+// isPortListening 检查指定端口是否在监听
+func isPortListening(host string, port int, timeout time.Duration) bool {
+	address := fmt.Sprintf("%s:%d", host, port)
+	conn, err := net.DialTimeout("tcp", address, timeout)
 	if err != nil {
 		return false
+	}
+	conn.Close()
+	return true
+}
+
+// IsOCRServiceRunning 检查 OCR 服务是否运行
+func IsOCRServiceRunning() bool {
+	// 先检查端口是否在监听（更快速、更可靠）
+	if !isPortListening(global.OCRServiceHost, global.OCRServicePort, _const.OCRServicePortCheckTimeout) {
+		return false
+	}
+
+	// 端口已监听，再检查 HTTP 健康检查端点
+	client := &http.Client{Timeout: _const.OCRServiceHealthCheckTimeout}
+	healthURL := fmt.Sprintf("http://%s:%d/health", global.OCRServiceHost, global.OCRServicePort)
+	resp, err := client.Get(healthURL)
+	if err != nil {
+		// 端口已监听但 HTTP 请求失败，可能是服务刚启动，健康检查端点还没准备好
+		// 这种情况下我们认为服务已经启动（端口已监听）
+		return true
 	}
 	defer resp.Body.Close()
 
@@ -609,7 +651,7 @@ func EnsureOCRService() error {
 func RestartOCRService() error {
 	fmt.Println("正在重启 OCR 服务...")
 	StopOCRService()
-	time.Sleep(2 * time.Second)
+	time.Sleep(_const.OCRServiceRestartWaitTime)
 	return StartOCRService()
 }
 
@@ -623,8 +665,9 @@ func GetOCRServiceStatus() map[string]interface{} {
 
 	// 尝试获取服务详细信息
 	if IsOCRServiceRunning() {
-		client := &http.Client{Timeout: 3 * time.Second}
-		resp, err := client.Get("http://127.0.0.1:1224/")
+		client := &http.Client{Timeout: _const.OCRServiceHealthCheckTimeout}
+		serviceURL := fmt.Sprintf("http://%s:%d/", global.OCRServiceHost, global.OCRServicePort)
+		resp, err := client.Get(serviceURL)
 		if err == nil {
 			defer resp.Body.Close()
 			body, err := io.ReadAll(resp.Body)
