@@ -17,16 +17,19 @@ var (
 	procGetWindowTextLength = user32.NewProc("GetWindowTextLengthW")
 	procPostMessage         = user32.NewProc("PostMessageW")
 	// procSendMessage 已在 input_methods.go 中声明，这里不重复声明
-	procSendInput        = user32.NewProc("SendInput")
-	procGetCursorPos     = user32.NewProc("GetCursorPos")
-	procSetCursorPos     = user32.NewProc("SetCursorPos")
-	procClientToScreen   = user32.NewProc("ClientToScreen")
-	procIsWindow         = user32.NewProc("IsWindow")
-	procIsWindowVisible  = user32.NewProc("IsWindowVisible")
-	procIsIconic         = user32.NewProc("IsIconic")
-	procShowWindow       = user32.NewProc("ShowWindow")
-	procSetActiveWindow  = user32.NewProc("SetActiveWindow")
-	procBringWindowToTop = user32.NewProc("BringWindowToTop")
+	procSendInput         = user32.NewProc("SendInput")
+	procGetCursorPos      = user32.NewProc("GetCursorPos")
+	procSetCursorPos      = user32.NewProc("SetCursorPos")
+	procClientToScreen    = user32.NewProc("ClientToScreen")
+	procIsWindow          = user32.NewProc("IsWindow")
+	procIsWindowVisible   = user32.NewProc("IsWindowVisible")
+	procIsIconic          = user32.NewProc("IsIconic")
+	procShowWindow        = user32.NewProc("ShowWindow")
+	procSetActiveWindow   = user32.NewProc("SetActiveWindow")
+	procBringWindowToTop  = user32.NewProc("BringWindowToTop")
+	procSetFocus          = user32.NewProc("SetFocus")
+	procGetFocus          = user32.NewProc("GetFocus")
+	procAttachThreadInput = user32.NewProc("AttachThreadInput")
 )
 
 // FindWindow
@@ -391,6 +394,93 @@ func ClickWindowUsingSendMessage(hwnd syscall.Handle, x, y int) bool {
 	return success
 }
 
+// ClickWindowUsingHandleEnhanced
+// @author: [Fantasia](https://www.npc0.com)
+// @function: ClickWindowUsingHandleEnhanced
+// @description: 增强版基于句柄的点击，确保窗口激活并获得焦点后再发送消息
+// @param: hwnd syscall.Handle 窗口句柄, x, y int 窗口内坐标
+// @return: bool
+func ClickWindowUsingHandleEnhanced(hwnd syscall.Handle, x, y int) bool {
+	const (
+		WM_MOUSEMOVE   = 0x0200
+		WM_LBUTTONDOWN = 0x0201
+		WM_LBUTTONUP   = 0x0202
+		WM_ACTIVATE    = 0x0006
+		WA_ACTIVE      = 1
+	)
+
+	// 1. 确保窗口可见
+	if !IsWindowVisible(hwnd) {
+		const SW_SHOW = 5
+		ShowWindow(hwnd, SW_SHOW)
+	}
+
+	// 2. 恢复最小化窗口
+	if IsIconic(hwnd) {
+		const SW_RESTORE = 9
+		ShowWindow(hwnd, SW_RESTORE)
+	}
+
+	// 3. 将窗口置于前台
+	SetForegroundWindow(hwnd)
+	BringWindowToTop(hwnd)
+	SetActiveWindow(hwnd)
+
+	// 4. 尝试设置焦点到窗口（如果窗口有子控件，可能需要设置到子控件）
+	procSetFocus.Call(uintptr(hwnd))
+
+	// 5. 发送激活消息
+	procSendMessage.Call(
+		uintptr(hwnd),
+		WM_ACTIVATE,
+		WA_ACTIVE,
+		0,
+	)
+
+	// 短暂延迟，确保窗口有时间响应激活消息
+	// 注意：这里不能直接使用 time.Sleep，因为 windows.go 没有导入 time 包
+	// 如果需要延迟，可以在调用此函数前添加，或者使用其他方式
+
+	// 将坐标打包到lParam中
+	lParam := uintptr((uint32(y) << 16) | (uint32(x) & 0xFFFF))
+
+	// 6. 发送鼠标移动消息
+	procSendMessage.Call(
+		uintptr(hwnd),
+		WM_MOUSEMOVE,
+		0,
+		lParam,
+	)
+
+	// 7. 发送鼠标按下消息（使用 MK_LBUTTON 标志）
+	const MK_LBUTTON = 0x0001
+	ret1, _, _ := procSendMessage.Call(
+		uintptr(hwnd),
+		WM_LBUTTONDOWN,
+		MK_LBUTTON,
+		lParam,
+	)
+
+	// 8. 短暂延迟，模拟真实点击
+	// time.Sleep(10 * time.Millisecond) // 如果需要可以取消注释
+
+	// 9. 发送鼠标释放消息
+	ret2, _, _ := procSendMessage.Call(
+		uintptr(hwnd),
+		WM_LBUTTONUP,
+		0,
+		lParam,
+	)
+
+	success := ret1 != 0 && ret2 != 0
+	if success {
+		fmt.Printf("[ClickWindowUsingHandleEnhanced] 基于句柄的增强点击成功: 坐标 (%d, %d)\n", x, y)
+	} else {
+		fmt.Printf("[ClickWindowUsingHandleEnhanced] 基于句柄的增强点击失败: 坐标 (%d, %d), ret1=%d, ret2=%d\n", x, y, ret1, ret2)
+	}
+	return success
+}
+
 // ClickWindowUsingInput
 // @author: [Fantasia](https://www.npc0.com)
 // @function: ClickWindowUsingInput
@@ -491,19 +581,25 @@ func ClickWindowEnhanced(hwnd syscall.Handle, x, y int) bool {
 
 	fmt.Printf("[ClickWindowEnhanced] 尝试点击坐标 (%d, %d)...\n", x, y)
 
-	// 3. 首先尝试使用 SendInput（最可靠，模拟真实鼠标操作）
+	// 3. 首先尝试使用增强版基于句柄的点击（确保窗口激活）
+	if ClickWindowUsingHandleEnhanced(hwnd, x, y) {
+		fmt.Printf("[ClickWindowEnhanced] 增强版句柄点击方式成功\n")
+		return true
+	}
+
+	// 4. 如果增强版句柄点击失败，尝试 SendInput（最可靠，模拟真实鼠标操作）
 	if ClickWindowUsingInput(hwnd, x, y) {
 		fmt.Printf("[ClickWindowEnhanced] SendInput 方式成功\n")
 		return true
 	}
 
-	// 4. 如果 SendInput 失败，尝试 SendMessage
+	// 5. 如果 SendInput 失败，尝试 SendMessage
 	if ClickWindowUsingSendMessage(hwnd, x, y) {
 		fmt.Printf("[ClickWindowEnhanced] SendMessage 方式成功\n")
 		return true
 	}
 
-	// 5. 最后尝试 PostMessage（原有方式）
+	// 6. 最后尝试 PostMessage（原有方式）
 	if ClickWindow(hwnd, x, y) {
 		fmt.Printf("[ClickWindowEnhanced] PostMessage 方式成功\n")
 		return true
