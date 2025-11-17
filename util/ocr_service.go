@@ -303,7 +303,7 @@ func ensureEmbeddedPython() (string, error) {
 		pipArgs = append(pipArgs, "-i", pypiTsinghuaIndex, "--trusted-host", pypiTsinghuaHost)
 	}
 	// 指定 paddleocr 版本为 2.7.0.3，确保 API 兼容性
-	pipArgs = append(pipArgs, "paddlepaddle==3.0.0b2", "paddleocr==2.8.1", "flask", "requests", "pillow")
+	pipArgs = append(pipArgs, "setuptools", "paddlepaddle==3.0.0b2", "paddleocr==2.8.1", "flask", "requests", "pillow")
 
 	pipCmd := exec.Command(absPython, pipArgs...)
 	pipCmd.Dir = embedDir

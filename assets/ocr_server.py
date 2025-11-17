@@ -11,6 +11,7 @@ import json
 import base64
 import logging
 from io import BytesIO
+from paddleocr import PaddleOCR
 from flask import Flask, request, jsonify
 from PIL import Image
 import traceback
@@ -35,11 +36,7 @@ def initialize_paddleocr():
     try:
         logger.info("正在初始化 PaddleOCR...")
         
-        # 导入 PaddleOCR
-        from paddleocr import PaddleOCR
-        
         # 设置模型缓存目录，避免重复下载
-        import os
         home_dir = os.path.expanduser("~")
         paddle_cache_dir = os.path.join(home_dir, ".paddleocr")
         

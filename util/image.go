@@ -19,6 +19,14 @@ import (
 	"time"
 )
 
+// min 返回两个整数中的较小值
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // TextPositionCache 文本位置缓存结构
 type TextPositionCache struct {
 	X1    int
@@ -184,17 +192,16 @@ func searchTextInFullScreen(hand syscall.Handle, targetText string) (*TextPositi
 	base64Data := base64.StdEncoding.EncodeToString(imageData)
 
 	// 将请求数据转换为JSON
-	jsonData, err := json.Marshal(map[string]interface{}{
-		"base64": base64Data,
-		"options": map[string]interface{}{
-			"data": map[string]interface{}{
-				"format": "dict",
-			},
-		},
-	})
+	requestMap := map[string]interface{}{
+		"image": base64Data,
+	}
+	jsonData, err := json.Marshal(requestMap)
 	if err != nil {
 		return nil, fmt.Errorf("JSON编码失败: %v", err)
 	}
+
+	// 调试：打印请求数据前100字符
+	fmt.Printf("DEBUG - OCR请求数据长度: %d, 前100字符: %s\n", len(jsonData), string(jsonData[:min(100, len(jsonData))]))
 
 	// 发送POST请求到PaddleOCR服务
 	client := &http.Client{Timeout: _const.OCRServiceAPITimeout}
@@ -386,14 +393,10 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 		base64Data := base64.StdEncoding.EncodeToString(imageData)
 
 		// 将请求数据转换为JSON
-		jsonData, err := json.Marshal(map[string]interface{}{
-			"base64": base64Data,
-			"options": map[string]interface{}{
-				"data": map[string]interface{}{
-					"format": "dict",
-				},
-			},
-		})
+		requestMap := map[string]interface{}{
+			"image": base64Data,
+		}
+		jsonData, err := json.Marshal(requestMap)
 		if err != nil {
 			fmt.Printf("第%d次JSON编码失败: %v\n", i, err)
 			continue
@@ -532,12 +535,7 @@ func ExtractTextFromArea(hand syscall.Handle, x1, y1, x2, y2 int) (string, error
 
 	// 构造请求参数
 	requestData := map[string]interface{}{
-		"base64": base64Data,
-		"options": map[string]interface{}{
-			"data": map[string]interface{}{
-				"format": "dict",
-			},
-		},
+		"image": base64Data,
 	}
 
 	// 将请求数据转换为JSON
