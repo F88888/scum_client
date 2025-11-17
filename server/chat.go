@@ -475,9 +475,9 @@ func executePeriodicCommands(hwnd syscall.Handle) {
 		return
 	}
 
-	// 自建服务器不执行这三个固定指令
-	if global.ScumConfig.FtpProvider == global.FtpProviderSelfBuilt {
-		logDebug("自建服务器类型，跳过定时指令执行")
+	// 自建服务器和命令行服务器不执行这三个固定指令（由scum_run自动推送）
+	if global.ScumConfig.FtpProvider == global.FtpProviderSelfBuilt || global.ScumConfig.FtpProvider == global.FtpProviderCommandLine {
+		logDebug("自建服务器或命令行服务器类型，跳过定时指令执行（由scum_run自动推送）")
 		lastPeriodicCommandTime = time.Now()
 		return
 	}
