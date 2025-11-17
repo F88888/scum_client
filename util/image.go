@@ -63,13 +63,28 @@ func setTextPositionCache(text string, cache *TextPositionCache) {
 	fmt.Printf("缓存文本位置: '%s' -> [%d,%d,%d,%d]\n", text, cache.X1, cache.Y1, cache.X2, cache.Y2)
 }
 
-// searchTextInFullScreen 全屏搜索文本并返回位置
-// @description: 全屏搜索文本并返回位置
+// getMultilingualTexts 获取多语言文本列表
+// @description: 根据文本key获取所有支持的语言版本
+// @param: textKey string 文本key（如 "MUTE", "GLOBAL" 等）
+// @return: []string 多语言文本列表
+func getMultilingualTexts(textKey string) []string {
+	// 检查是否有多语言映射
+	if texts, exists := global.GameUIText[strings.ToUpper(textKey)]; exists {
+		return texts
+	}
+	// 如果没有映射，返回原始文本
+	return []string{textKey}
+}
+
+// searchTextInFullScreen 全屏搜索文本并返回位置（支持多语言）
+// @description: 全屏搜索文本并返回位置，支持多语言匹配
 // @param: hand syscall.Handle 窗口句柄
-// @param: targetText string 目标文本
+// @param: targetText string 目标文本key（如 "MUTE", "GLOBAL" 等）
 // @return: *TextPositionCache, error
 func searchTextInFullScreen(hand syscall.Handle, targetText string) (*TextPositionCache, error) {
-	fmt.Printf("开始全屏搜索文本: '%s'\n", targetText)
+	// 获取多语言文本列表
+	textVariants := getMultilingualTexts(targetText)
+	fmt.Printf("开始全屏搜索文本: '%s' (支持多语言: %v)\n", targetText, textVariants)
 
 	// 全屏截图
 	imagePath, err := ScreenshotGrayscale(hand, 0, 0, global.GameWindowWidth, global.GameWindowHeight)
@@ -136,7 +151,7 @@ func searchTextInFullScreen(hand syscall.Handle, targetText string) (*TextPositi
 		return nil, fmt.Errorf("OCR响应data格式错误")
 	}
 
-	// 遍历所有识别到的文本，查找目标文本
+	// 遍历所有识别到的文本，查找目标文本（支持多语言）
 	for _, item := range dataArray {
 		itemMap, ok := item.(map[string]interface{})
 		if !ok {
@@ -144,7 +159,19 @@ func searchTextInFullScreen(hand syscall.Handle, targetText string) (*TextPositi
 		}
 
 		text, _ := itemMap["text"].(string)
-		if strings.Contains(strings.ToUpper(text), strings.ToUpper(targetText)) {
+		textUpper := strings.ToUpper(strings.TrimSpace(text))
+
+		// 检查是否匹配任何语言版本
+		matched := false
+		for _, variant := range textVariants {
+			variantUpper := strings.ToUpper(strings.TrimSpace(variant))
+			if strings.Contains(textUpper, variantUpper) || strings.Contains(variantUpper, textUpper) {
+				matched = true
+				break
+			}
+		}
+
+		if matched {
 			// 找到目标文本，提取box坐标
 			boxData, ok := itemMap["box"].([]interface{})
 			if !ok || len(boxData) < 4 {
@@ -188,30 +215,30 @@ func searchTextInFullScreen(hand syscall.Handle, targetText string) (*TextPositi
 				Found: true,
 			}
 
-			fmt.Printf("全屏搜索成功: 找到文本 '%s' 在位置 [%d,%d,%d,%d]\n",
-				targetText, cache.X1, cache.Y1, cache.X2, cache.Y2)
+			fmt.Printf("全屏搜索成功: 找到文本 '%s' (识别为: '%s') 在位置 [%d,%d,%d,%d]\n",
+				targetText, text, cache.X1, cache.Y1, cache.X2, cache.Y2)
 			return cache, nil
 		}
 	}
 
-	return nil, fmt.Errorf("全屏搜索未找到文本: '%s'", targetText)
+	return nil, fmt.Errorf("全屏搜索未找到文本: '%s' (已尝试: %v)", targetText, textVariants)
 }
 
 // ExtractTextFromSpecifiedAreaAndValidateThreeTimes
 // @author: [Fantasia](https://www.npc0.com)
 // @function: ExtractTextFromSpecifiedAreaAndValidateThreeTimes
-// @description: 从指定区域提取文本并验证三次（自动缓存位置）
+// @description: 从指定区域提取文本并验证三次（自动缓存位置，支持多语言）
 // @param: hand syscall.Handle 窗口句柄
-// @param: x1, y1, x2, y2 int 初始搜索区域（仅首次使用）
-// @param: test string 期望识别的文本
+// @param: test string 期望识别的文本key（如 "MUTE", "GLOBAL" 等）
 // @return: error
 func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test string) error {
-	// 检查缓存
+	// 检查缓存（使用原始key）
 	cache, exists := getTextPositionFromCache(test)
 
 	if !exists {
 		// 首次搜索，使用全屏搜索
-		fmt.Printf("首次搜索文本 '%s'，使用全屏搜索...\n", test)
+		textVariants := getMultilingualTexts(test)
+		fmt.Printf("首次搜索文本 '%s' (支持多语言: %v)，使用全屏搜索...\n", test, textVariants)
 		newCache, err := searchTextInFullScreen(hand, test)
 		if err != nil {
 			return err
@@ -289,18 +316,25 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 
 		// 检查识别结果
 		if ocrResult.Code == 100 {
-			// 识别成功，检查是否包含目标文本
+			// 识别成功，检查是否包含目标文本（支持多语言）
 			dataArray, ok := ocrResult.Data.([]interface{})
 			if ok {
+				textVariants := getMultilingualTexts(test)
 				for _, item := range dataArray {
 					itemMap, ok := item.(map[string]interface{})
 					if !ok {
 						continue
 					}
 					text, _ := itemMap["text"].(string)
-					if strings.Contains(strings.ToUpper(text), strings.ToUpper(test)) {
-						fmt.Printf("第%d次验证成功: 找到目标文字 '%s'\n", i, test)
-						return nil
+					textUpper := strings.ToUpper(strings.TrimSpace(text))
+
+					// 检查是否匹配任何语言版本
+					for _, variant := range textVariants {
+						variantUpper := strings.ToUpper(strings.TrimSpace(variant))
+						if strings.Contains(textUpper, variantUpper) || strings.Contains(variantUpper, textUpper) {
+							fmt.Printf("第%d次验证成功: 找到目标文字 '%s' (识别为: '%s')\n", i, test, text)
+							return nil
+						}
 					}
 				}
 			}

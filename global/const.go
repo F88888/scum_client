@@ -21,3 +21,13 @@ const (
 	OCRServiceHost = "127.0.0.1" // OCR 服务主机地址
 	OCRServicePort = 1224        // OCR 服务端口号
 )
+
+// GameUIText 游戏界面文本多语言映射
+// 用于OCR识别时支持多种语言
+// Key为英文文本，Value为所有支持的语言版本（包括英文和中文）
+var GameUIText = map[string][]string{
+	"MUTE":     {"MUTE", "静音"},
+	"GLOBAL":   {"GLOBAL", "全球"},
+	"LOCAL":    {"LOCAL", "本地"},
+	"CONTINUE": {"CONTINUE", "继续游戏"},
+}
