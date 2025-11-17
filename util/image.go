@@ -220,7 +220,6 @@ func searchTextInFullScreen(hand syscall.Handle, targetText string) (*TextPositi
 	// 检查识别结果
 	if ocrResult.Code == 101 {
 		// 检测不到文本，标记为移动到桌面
-		shouldMoveToDesktop = true
 		return nil, fmt.Errorf("OCR识别失败，code: %d (图片中无文本)", ocrResult.Code)
 	}
 	if ocrResult.Code != 100 {

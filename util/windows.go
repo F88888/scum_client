@@ -25,10 +25,10 @@ var (
 // @param: className, windowName string 类名和窗口名
 // @return: syscall.Handle
 func FindWindow(className, windowName string) syscall.Handle {
-	lpClassName, e2 := syscall.UTF16PtrFromString(className)
-	lpWindowName, e3 := syscall.UTF16PtrFromString(windowName)
+	lpClassName, _ := syscall.UTF16PtrFromString(className)
+	lpWindowName, _ := syscall.UTF16PtrFromString(windowName)
 	// 调用FindWindowW
-	r0, _, e1 := procFindWindowW.Call(uintptr(unsafe.Pointer(lpClassName)), uintptr(unsafe.Pointer(lpWindowName)))
+	r0, _, _ := procFindWindowW.Call(uintptr(unsafe.Pointer(lpClassName)), uintptr(unsafe.Pointer(lpWindowName)))
 	return syscall.Handle(r0)
 }
 
