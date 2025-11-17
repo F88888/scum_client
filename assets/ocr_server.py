@@ -68,7 +68,6 @@ def initialize_paddleocr():
             logger.info(f"使用自定义英文识别模型: {custom_model_path}")
             # 使用自定义英文识别模型 - 仅使用最基础的参数
             ocr = PaddleOCR(
-                lang='en',
                 use_gpu=False,
                 text_recognition_model_dir=custom_model_path
             )

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"qq_client/global"
 	_const "qq_client/internal/const"
+	"qq_client/model/request"
 	"runtime"
 	"strings"
 	"sync"
@@ -169,11 +170,8 @@ func getMultilingualTexts(textKey string) []string {
 // @return: *TextPositionCache, error
 func searchTextInFullScreen(hand syscall.Handle, targetText string) (*TextPositionCache, error) {
 	// 获取多语言文本列表
+	var ocrResult request.OcrResult
 	textVariants := getMultilingualTexts(targetText)
-	var ocrResult struct {
-		Code int         `json:"code"`
-		Data interface{} `json:"data"`
-	}
 
 	// 全屏截图
 	imagePath, err := ScreenshotGrayscale(hand, 0, 0, global.GameWindowWidth, global.GameWindowHeight)
@@ -192,16 +190,17 @@ func searchTextInFullScreen(hand syscall.Handle, targetText string) (*TextPositi
 	base64Data := base64.StdEncoding.EncodeToString(imageData)
 
 	// 将请求数据转换为JSON
-	requestMap := map[string]interface{}{
+	jsonData, err := json.Marshal(map[string]interface{}{
 		"image": base64Data,
-	}
-	jsonData, err := json.Marshal(requestMap)
+		"options": map[string]interface{}{
+			"data": map[string]interface{}{
+				"format": "dict",
+			},
+		},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("JSON编码失败: %v", err)
 	}
-
-	// 调试：打印请求数据前100字符
-	fmt.Printf("DEBUG - OCR请求数据长度: %d, 前100字符: %s\n", len(jsonData), string(jsonData[:min(100, len(jsonData))]))
 
 	// 发送POST请求到PaddleOCR服务
 	client := &http.Client{Timeout: _const.OCRServiceAPITimeout}
@@ -393,16 +392,21 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 		base64Data := base64.StdEncoding.EncodeToString(imageData)
 
 		// 将请求数据转换为JSON
-		requestMap := map[string]interface{}{
+		jsonData, err := json.Marshal(map[string]interface{}{
 			"image": base64Data,
-		}
-		jsonData, err := json.Marshal(requestMap)
+			"options": map[string]interface{}{
+				"data": map[string]interface{}{
+					"format": "dict",
+				},
+			},
+		})
 		if err != nil {
 			fmt.Printf("第%d次JSON编码失败: %v\n", i, err)
 			continue
 		}
 
 		// 发送POST请求到PaddleOCR服务
+		var ocrResult request.OcrResult
 		client := &http.Client{Timeout: _const.OCRServiceAPITimeout}
 		ocrAPIURL := fmt.Sprintf("http://%s:%d/api/ocr", global.OCRServiceHost, global.OCRServicePort)
 		resp, err := client.Post(ocrAPIURL,
@@ -421,11 +425,7 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 		}
 
 		// 解析OCR响应
-		var ocrResult struct {
-			Code int         `json:"code"`
-			Data interface{} `json:"data"`
-		}
-		if err := json.Unmarshal(responseData, &ocrResult); err != nil {
+		if err = json.Unmarshal(responseData, &ocrResult); err != nil {
 			fmt.Printf("第%d次解析响应JSON失败: %v\n", i, err)
 			continue
 		}
@@ -490,114 +490,6 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 		// OCR识别失败，可能是临时问题，保留缓存
 		fmt.Printf("验证失败: OCR识别失败，保留缓存位置 '%s'\n", test)
 		return errors.New("OCR识别失败，无法验证文本")
-	}
-}
-
-// ExtractTextFromArea
-// @author: [Fantasia](https://www.npc0.com)
-// @function: ExtractTextFromArea
-// @description: 从指定区域提取所有文本（不验证特定内容）
-// @param: x1, y1, x2, y2 int 左上角、右下角坐标
-// @return: string, error
-func ExtractTextFromArea(hand syscall.Handle, x1, y1, x2, y2 int) (string, error) {
-	var imagePath string
-	var err error
-
-	// 提取图片
-	if imagePath, err = ScreenshotGrayscale(hand, x1, y1, x2, y2); err != nil {
-		return "", err
-	}
-	shouldMoveToDesktop := false
-	// 移除图片
-	defer func(name string, shouldMove *bool) {
-		if *shouldMove {
-			// 检测不到文本，移动到桌面
-			if err := moveImageToDesktop(name); err != nil {
-				fmt.Printf("移动图片到桌面失败: %v\n", err)
-				// 如果移动失败，删除原文件
-				_ = os.Remove(name)
-			}
-		} else {
-			// 正常情况，删除临时文件
-			_ = os.Remove(name)
-		}
-	}(imagePath, &shouldMoveToDesktop)
-
-	// 读取图片
-	var imageData []byte
-	imageData, err = os.ReadFile(imagePath)
-	if err != nil {
-		return "", fmt.Errorf("读取图片文件失败: %v", err)
-	}
-
-	// 将图片转换为Base64编码
-	base64Data := base64.StdEncoding.EncodeToString(imageData)
-
-	// 构造请求参数
-	requestData := map[string]interface{}{
-		"image": base64Data,
-	}
-
-	// 将请求数据转换为JSON
-	jsonData, err := json.Marshal(requestData)
-	if err != nil {
-		return "", fmt.Errorf("JSON编码失败: %v", err)
-	}
-
-	// 发送POST请求到PaddleOCR服务
-	client := &http.Client{Timeout: _const.OCRServiceAPITimeout}
-	ocrAPIURL := fmt.Sprintf("http://%s:%d/api/ocr", global.OCRServiceHost, global.OCRServicePort)
-	resp, err := client.Post(ocrAPIURL,
-		"application/json", bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", fmt.Errorf("发送请求失败: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// 读取并解析响应
-	responseData, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("读取响应失败: %v", err)
-	}
-
-	// 解析OCR响应
-	var ocrResult struct {
-		Code int         `json:"code"`
-		Data interface{} `json:"data"`
-	}
-	if err := json.Unmarshal(responseData, &ocrResult); err != nil {
-		return "", fmt.Errorf("解析响应JSON失败: %v", err)
-	}
-
-	// 处理响应结果
-	if ocrResult.Code == 100 {
-		// 识别成功，提取所有文本
-		dataArray, ok := ocrResult.Data.([]interface{})
-		if !ok {
-			return "", fmt.Errorf("OCR响应data格式错误")
-		}
-
-		var texts []string
-		for _, item := range dataArray {
-			itemMap, ok := item.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			text, _ := itemMap["text"].(string)
-			if text != "" {
-				texts = append(texts, text)
-			}
-		}
-
-		return strings.Join(texts, " "), nil
-	} else if ocrResult.Code == 101 {
-		// 图片中无文本，标记为移动到桌面
-		shouldMoveToDesktop = true
-		return "", fmt.Errorf("图片中无文本")
-	} else {
-		// 识别失败
-		dataStr, _ := ocrResult.Data.(string)
-		return "", fmt.Errorf("OCR识别失败，错误代码: %d，错误信息: %s", ocrResult.Code, dataStr)
 	}
 }
 
