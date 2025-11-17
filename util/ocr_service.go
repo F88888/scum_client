@@ -222,6 +222,142 @@ func enableImportSite(pthPath string) error {
 	return nil
 }
 
+// copyStdlibFromSystemPython 尝试从系统已安装的 Python 复制标准库
+func copyStdlibFromSystemPython(targetLibDir string) error {
+	// 常见的 Python 安装路径
+	possiblePaths := []string{
+		`C:\Python312\Lib`,
+		`C:\Python312\lib`,
+		`C:\Program Files\Python312\Lib`,
+		`C:\Program Files (x86)\Python312\Lib`,
+		`C:\Users\%USERNAME%\AppData\Local\Programs\Python\Python312\Lib`,
+	}
+
+	// 也尝试从环境变量中获取
+	if pythonPath := os.Getenv("PYTHONPATH"); pythonPath != "" {
+		for _, path := range strings.Split(pythonPath, ";") {
+			if strings.Contains(path, "Python") && strings.Contains(path, "Lib") {
+				possiblePaths = append([]string{path}, possiblePaths...)
+			}
+		}
+	}
+
+	// 查找包含 encodings 的 Python Lib 目录
+	var sourceLibDir string
+	for _, path := range possiblePaths {
+		// 展开环境变量
+		expandedPath := os.ExpandEnv(path)
+		encodingsPath := filepath.Join(expandedPath, "encodings")
+		if _, err := os.Stat(encodingsPath); err == nil {
+			sourceLibDir = expandedPath
+			break
+		}
+	}
+
+	if sourceLibDir == "" {
+		return fmt.Errorf("未找到系统 Python 标准库（需要 Python 3.12）")
+	}
+
+	fmt.Printf("找到系统 Python 标准库: %s\n", sourceLibDir)
+
+	// 复制标准库文件（只复制必要的模块，避免复制整个目录）
+	// 先确保目标目录存在
+	if err := ensureDir(targetLibDir); err != nil {
+		return fmt.Errorf("创建目标 Lib 目录失败: %v", err)
+	}
+
+	// 复制 encodings 目录
+	sourceEncodings := filepath.Join(sourceLibDir, "encodings")
+	targetEncodings := filepath.Join(targetLibDir, "encodings")
+	if err := copyDir(sourceEncodings, targetEncodings); err != nil {
+		return fmt.Errorf("复制 encodings 模块失败: %v", err)
+	}
+
+	// 复制其他核心标准库模块（简化版，只复制最必要的）
+	coreModules := []string{"importlib", "collections", "io", "os.py", "sys.py", "site.py", "codecs.py", "_collections_abc.py"}
+	for _, module := range coreModules {
+		sourcePath := filepath.Join(sourceLibDir, module)
+		targetPath := filepath.Join(targetLibDir, module)
+		if _, err := os.Stat(sourcePath); err == nil {
+			if err := copyFileOrDir(sourcePath, targetPath); err != nil {
+				fmt.Printf("警告: 复制模块 %s 失败: %v\n", module, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// copyFileOrDir 复制文件或目录
+func copyFileOrDir(src, dst string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return copyDir(src, dst)
+	}
+	return copyFile(src, dst)
+}
+
+// copyDir 递归复制目录
+func copyDir(srcDir, dstDir string) error {
+	if err := ensureDir(dstDir); err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(srcDir, entry.Name())
+		dstPath := filepath.Join(dstDir, entry.Name())
+
+		if entry.IsDir() {
+			if err := copyDir(srcPath, dstPath); err != nil {
+				return err
+			}
+		} else {
+			if err := copyFile(srcPath, dstPath); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// verifyPythonEnvironment 验证Python环境是否完整
+func verifyPythonEnvironment(pythonExe string) bool {
+	// 检查 Lib 目录是否存在且包含 encodings
+	embedDirAbs, _ := filepath.Abs(embedDir)
+	encodingsPath := filepath.Join(embedDirAbs, "Lib", "encodings")
+	if _, err := os.Stat(encodingsPath); os.IsNotExist(err) {
+		return false
+	}
+
+	// 检查核心模块 encodings 是否可以导入（需要设置正确的环境变量）
+	cmd := exec.Command(pythonExe, "-c", "import encodings")
+	if runtime.GOOS == "windows" {
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		// 设置环境变量，确保Python能找到标准库
+		env := os.Environ()
+		pythonHome := fmt.Sprintf("PYTHONHOME=%s", embedDirAbs)
+		env = append(env, pythonHome)
+		pathEnv := fmt.Sprintf("PATH=%s;%s", embedDirAbs, os.Getenv("PATH"))
+		env = append(env, pathEnv)
+		cmd.Env = env
+	}
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	if err := cmd.Run(); err != nil {
+		return false
+	}
+
+	return true
+}
+
 func ensureEmbeddedPython() (string, error) {
 	if runtime.GOOS != "windows" {
 		return "", fmt.Errorf("仅 Windows 支持内置 Python")
@@ -233,7 +369,16 @@ func ensureEmbeddedPython() (string, error) {
 	pythonExe := filepath.Join(embedDir, "python.exe")
 	if _, err := os.Stat(pythonExe); err == nil {
 		abs, _ := filepath.Abs(pythonExe)
-		return abs, nil
+		// 验证Python环境是否完整
+		if !verifyPythonEnvironment(abs) {
+			fmt.Println("检测到Python环境不完整，将重新下载并安装...")
+			// 删除不完整的环境
+			if err := os.RemoveAll(embedDir); err != nil {
+				fmt.Printf("警告: 删除不完整环境失败: %v\n", err)
+			}
+		} else {
+			return abs, nil
+		}
 	}
 	fmt.Println("未检测到内置 Python，开始自动下载并解压...")
 	zipPath := filepath.Join(embedDir, "python-embed.zip")
@@ -242,6 +387,20 @@ func ensureEmbeddedPython() (string, error) {
 	}
 	if err := unzip(zipPath, embedDir); err != nil {
 		return "", fmt.Errorf("解压 Python 失败: %v", err)
+	}
+
+	// 验证解压后的关键文件是否存在，如果缺少标准库则从系统 Python 复制
+	embedDirAbs, _ := filepath.Abs(embedDir)
+	libDir := filepath.Join(embedDirAbs, "Lib")
+	encodingsDir := filepath.Join(libDir, "encodings")
+	if _, err := os.Stat(encodingsDir); os.IsNotExist(err) {
+		// encodings 目录不存在，说明标准库缺失
+		// Python 嵌入式版本不包含完整标准库，需要从系统 Python 复制
+		fmt.Println("检测到 Python 标准库缺失（缺少 encodings），尝试从系统 Python 复制标准库...")
+		if err := copyStdlibFromSystemPython(libDir); err != nil {
+			return "", fmt.Errorf("Python 标准库缺失且无法自动获取: %v。\n解决方案：\n1. 安装完整版 Python 3.12（从 https://www.python.org/downloads/ 下载），程序会自动从中复制标准库\n2. 或者手动将 Python 3.12 的标准库（Lib 目录）复制到 %s\\Lib 目录", err, embedDirAbs)
+		}
+		fmt.Println("已从系统 Python 复制标准库")
 	}
 
 	// 处理 _pth，开启 site 与路径
@@ -277,6 +436,11 @@ func ensureEmbeddedPython() (string, error) {
 
 	absPython, _ := filepath.Abs(pythonExe)
 	fmt.Printf("使用内置 Python: %s\n", absPython)
+
+	// 验证Python环境完整性
+	if !verifyPythonEnvironment(absPython) {
+		return "", fmt.Errorf("Python环境不完整，缺少核心模块（如encodings）。请删除 %s 目录后重新运行", embedDir)
+	}
 
 	// 下载 get-pip.py
 	getPipPath := filepath.Join(embedDir, "get-pip.py")
