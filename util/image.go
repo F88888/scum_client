@@ -516,9 +516,9 @@ func ClickTextCenter(hand syscall.Handle, text string) error {
 	fmt.Printf("点击文本 '%s': 计算中心坐标 (%d, %d) (文本区域: [%d,%d,%d,%d])\n",
 		text, centerX, centerY, cache.X1, cache.Y1, cache.X2, cache.Y2)
 
-	// 使用窗口句柄直接点击（不需要坐标转换）
+	// 使用增强版窗口点击（尝试多种方式）
 	fmt.Printf("点击文本 '%s': 正在点击坐标 (%d, %d)...\n", text, centerX, centerY)
-	if !ClickWindow(hand, centerX, centerY) {
+	if !ClickWindowEnhanced(hand, centerX, centerY) {
 		return fmt.Errorf("点击窗口失败: 坐标 (%d, %d)", centerX, centerY)
 	}
 	fmt.Printf("点击文本 '%s': 点击成功，坐标 (%d, %d)\n", text, centerX, centerY)
