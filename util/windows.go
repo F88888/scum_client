@@ -424,7 +424,7 @@ func ClickWindowUsingHandleEnhanced(hwnd syscall.Handle, x, y int) bool {
 	// 3. 将窗口置于前台
 	SetForegroundWindow(hwnd)
 	BringWindowToTop(hwnd)
-	SetActiveWindow(hwnd)
+	procSetActiveWindow.Call(uintptr(hwnd))
 
 	// 4. 尝试设置焦点到窗口（如果窗口有子控件，可能需要设置到子控件）
 	procSetFocus.Call(uintptr(hwnd))
