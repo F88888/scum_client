@@ -49,6 +49,7 @@ def initialize_paddleocr():
         
         # 设置环境变量指定模型缓存路径
         os.environ['PADDLEOCR_MODEL_PATH'] = paddle_cache_dir
+        os.environ['PADDLEOCR_HOME'] = paddle_cache_dir
         
         # 检查是否存在已下载的自定义模型
         custom_model_paths = [
@@ -68,30 +69,18 @@ def initialize_paddleocr():
         
         if custom_model_found:
             logger.info(f"使用自定义英文识别模型: {custom_model_path}")
-            # 使用自定义英文识别模型 - 仅使用 PaddleOCR 3.0.0 支持的参数
+            # 使用自定义英文识别模型 - 仅使用最基础的参数
             ocr = PaddleOCR(
-                use_doc_orientation_classify=False,
-                use_doc_unwarping=False,
-                use_textline_orientation=False,
-                text_recognition_model_dir=custom_model_path,
-                show_log=False  # 减少日志输出
+                lang='en',
+                use_gpu=False,
+                text_recognition_model_dir=custom_model_path
             )
         else:
             logger.info("使用默认英文模型（首次使用将自动下载到系统缓存目录）")
             
-            # 设置缓存环境变量，确保模型缓存到指定位置
-            os.environ['PADDLEOCR_HOME'] = paddle_cache_dir
-            
-            # 使用默认模型 - 仅使用 PaddleOCR 3.0.0 支持的参数
-            # 注意：已移除 use_space_char 等已弃用参数
+            # 使用默认模型 - 仅使用最基础的参数，避免使用不支持的参数
             ocr = PaddleOCR(
-                use_doc_orientation_classify=False,
-                use_doc_unwarping=False, 
-                use_textline_orientation=False,
-                lang='en',  # 明确指定英文，避免下载中文模型
-                show_log=False,  # 减少日志输出
-                use_gpu=False,  # 明确使用CPU，避免GPU相关问题
-                drop_score=0.5  # 设置置信度阈值
+                use_gpu=False   # 明确使用CPU，避免GPU相关问题
             )
         
         ocr_initialized = True
