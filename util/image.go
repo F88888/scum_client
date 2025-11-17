@@ -40,7 +40,6 @@ func ClearTextPositionCache() {
 	cacheMutex.Lock()
 	defer cacheMutex.Unlock()
 	textPositionCache = make(map[string]*TextPositionCache)
-	fmt.Println("文本位置缓存已清空")
 }
 
 // getDesktopPath 获取桌面路径
@@ -117,7 +116,6 @@ func moveImageToDesktop(imagePath string) error {
 		}
 	}
 
-	fmt.Printf("已将检测不到文本的图片移动到桌面: %s\n", destPath)
 	return nil
 }
 
@@ -164,29 +162,19 @@ func getMultilingualTexts(textKey string) []string {
 func searchTextInFullScreen(hand syscall.Handle, targetText string) (*TextPositionCache, error) {
 	// 获取多语言文本列表
 	textVariants := getMultilingualTexts(targetText)
-	fmt.Printf("开始全屏搜索文本: '%s' (支持多语言: %v)\n", targetText, textVariants)
+	var ocrResult struct {
+		Code int         `json:"code"`
+		Data interface{} `json:"data"`
+	}
 
 	// 全屏截图
 	imagePath, err := ScreenshotGrayscale(hand, 0, 0, global.GameWindowWidth, global.GameWindowHeight)
 	if err != nil {
 		return nil, fmt.Errorf("全屏截图失败: %v", err)
 	}
-	shouldMoveToDesktop := false
-	defer func() {
-		if shouldMoveToDesktop {
-			// 检测不到文本，移动到桌面
-			if err = moveImageToDesktop(imagePath); err != nil {
-				fmt.Printf("移动图片到桌面失败: %v\n", err)
-				// 如果移动失败，删除原文件
-				_ = os.Remove(imagePath)
-			}
-		} else {
-			// 正常情况，删除临时文件
-			_ = os.Remove(imagePath)
-		}
-	}()
 
 	// 读取图片
+	defer os.Remove(imagePath)
 	imageData, err := os.ReadFile(imagePath)
 	if err != nil {
 		return nil, fmt.Errorf("读取图片文件失败: %v", err)
@@ -225,12 +213,7 @@ func searchTextInFullScreen(hand syscall.Handle, targetText string) (*TextPositi
 	}
 
 	// 解析OCR响应
-	var ocrResult struct {
-		Code int         `json:"code"`
-		Data interface{} `json:"data"`
-	}
-	fmt.Println("responseData", string(responseData))
-	if err := json.Unmarshal(responseData, &ocrResult); err != nil {
+	if err = json.Unmarshal(responseData, &ocrResult); err != nil {
 		return nil, fmt.Errorf("解析响应JSON失败: %v", err)
 	}
 
@@ -632,7 +615,6 @@ func ClickTextCenter(hand syscall.Handle, text string) error {
 	cache, exists := getTextPositionFromCache(text)
 	if !exists {
 		// 首次搜索，使用全屏搜索
-		fmt.Printf("点击文本 '%s': 首次搜索，使用全屏搜索...\n", text)
 		newCache, err := searchTextInFullScreen(hand, text)
 		if err != nil {
 			return fmt.Errorf("全屏搜索文本 '%s' 失败: %v", text, err)
@@ -652,9 +634,5 @@ func ClickTextCenter(hand syscall.Handle, text string) error {
 
 	// 使用增强版窗口点击（尝试多种方式）
 	fmt.Printf("点击文本 '%s': 正在点击坐标 (%d, %d)...\n", text, centerX, centerY)
-	if !ClickWindowEnhanced(hand, centerX, centerY) {
-		return fmt.Errorf("点击窗口失败: 坐标 (%d, %d)", centerX, centerY)
-	}
-	fmt.Printf("点击文本 '%s': 点击成功，坐标 (%d, %d)\n", text, centerX, centerY)
 	return nil
 }

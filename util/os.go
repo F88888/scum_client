@@ -75,8 +75,7 @@ func captureWindowImage(hwnd syscall.Handle) (*image.RGBA, error) {
 		// 窗口未最小化时，尝试激活窗口以获得更好的截图效果（但不强制）
 		// 如果窗口不可见，尝试显示它
 		if !IsWindowVisible(hwnd) {
-			const SW_SHOW = 5
-			ShowWindow(hwnd, SW_SHOW)
+			ShowWindow(hwnd, 5)
 			time.Sleep(50 * time.Millisecond)
 		}
 		// 尝试将窗口置于前台（可选，不影响截图）

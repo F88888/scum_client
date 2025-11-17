@@ -1,7 +1,6 @@
 package util
 
 import (
-	"fmt"
 	"syscall"
 	"unsafe"
 )
@@ -11,25 +10,12 @@ var (
 	procFindWindowW         = user32.NewProc("FindWindowW")
 	procSetForegroundWindow = user32.NewProc("SetForegroundWindow")
 	procMoveWindow          = user32.NewProc("MoveWindow")
-	procGetForegroundWindow = user32.NewProc("GetForegroundWindow")
-	procGetClassName        = user32.NewProc("GetClassNameW")
-	procGetWindowText       = user32.NewProc("GetWindowTextW")
-	procGetWindowTextLength = user32.NewProc("GetWindowTextLengthW")
 	procPostMessage         = user32.NewProc("PostMessageW")
-	// procSendMessage 已在 input_methods.go 中声明，这里不重复声明
-	procSendInput         = user32.NewProc("SendInput")
-	procGetCursorPos      = user32.NewProc("GetCursorPos")
-	procSetCursorPos      = user32.NewProc("SetCursorPos")
-	procClientToScreen    = user32.NewProc("ClientToScreen")
-	procIsWindow          = user32.NewProc("IsWindow")
-	procIsWindowVisible   = user32.NewProc("IsWindowVisible")
-	procIsIconic          = user32.NewProc("IsIconic")
-	procShowWindow        = user32.NewProc("ShowWindow")
-	procSetActiveWindow   = user32.NewProc("SetActiveWindow")
-	procBringWindowToTop  = user32.NewProc("BringWindowToTop")
-	procSetFocus          = user32.NewProc("SetFocus")
-	procGetFocus          = user32.NewProc("GetFocus")
-	procAttachThreadInput = user32.NewProc("AttachThreadInput")
+	procIsWindow            = user32.NewProc("IsWindow")
+	procIsWindowVisible     = user32.NewProc("IsWindowVisible")
+	procIsIconic            = user32.NewProc("IsIconic")
+	procShowWindow          = user32.NewProc("ShowWindow")
+	procBringWindowToTop    = user32.NewProc("BringWindowToTop")
 )
 
 // FindWindow
@@ -43,7 +29,6 @@ func FindWindow(className, windowName string) syscall.Handle {
 	lpWindowName, e3 := syscall.UTF16PtrFromString(windowName)
 	// 调用FindWindowW
 	r0, _, e1 := procFindWindowW.Call(uintptr(unsafe.Pointer(lpClassName)), uintptr(unsafe.Pointer(lpWindowName)))
-	fmt.Println(e1, e2, e3)
 	return syscall.Handle(r0)
 }
 
@@ -75,47 +60,6 @@ func MoveWindow(hwnd syscall.Handle, x, y, width, height int) bool {
 		uintptr(1),
 	)
 	return ret != 0
-}
-
-// GetForegroundWindow
-// @author: [Fantasia](https://www.npc0.com)
-// @function: GetForegroundWindow
-// @description: 获取前台窗口句柄
-// @return: syscall.Handle
-func GetForegroundWindow() syscall.Handle {
-	hwnd, _, _ := procGetForegroundWindow.Call()
-	return syscall.Handle(hwnd)
-}
-
-// GetClassName
-// @author: [Fantasia](https://www.npc0.com)
-// @function: GetClassName
-// @description: 获取句柄类名
-// @return: syscall.Handle
-func GetClassName(hwnd syscall.Handle) string {
-	var className [256]uint16
-	_, _, _ = procGetClassName.Call(
-		uintptr(hwnd),
-		uintptr(unsafe.Pointer(&className[0])),
-		uintptr(len(className)),
-	)
-	return syscall.UTF16ToString(className[:])
-}
-
-// GetWindowText
-// @author: [Fantasia](https://www.npc0.com)
-// @function: GetWindowText
-// @description: 获取句柄标题
-// @return: syscall.Handle
-func GetWindowText(hwnd syscall.Handle) string {
-	length, _, _ := procGetWindowTextLength.Call(uintptr(hwnd))
-	var text [256]uint16
-	_, _, _ = procGetWindowText.Call(
-		uintptr(hwnd),
-		uintptr(unsafe.Pointer(&text[0])),
-		uintptr(length+1),
-	)
-	return syscall.UTF16ToString(text[:])
 }
 
 // SendKeyToWindow
@@ -193,41 +137,6 @@ func ShowWindow(hwnd syscall.Handle, nCmdShow int) bool {
 	return ret != 0
 }
 
-// EnsureWindowVisible
-// @author: [Fantasia](https://www.npc0.com)
-// @function: EnsureWindowVisible
-// @description: 确保窗口可见且未最小化，如果不可见则尝试恢复
-// @param: hwnd syscall.Handle 窗口句柄
-// @return: bool 是否成功
-func EnsureWindowVisible(hwnd syscall.Handle) bool {
-	if hwnd == 0 {
-		return false
-	}
-
-	// 检查窗口句柄是否有效
-	if !IsWindow(hwnd) {
-		return false
-	}
-
-	// 如果窗口最小化，恢复窗口
-	if IsIconic(hwnd) {
-		const SW_RESTORE = 9
-		ShowWindow(hwnd, SW_RESTORE)
-	}
-
-	// 如果窗口不可见，显示窗口
-	if !IsWindowVisible(hwnd) {
-		const SW_SHOW = 5
-		ShowWindow(hwnd, SW_SHOW)
-	}
-
-	// 尝试将窗口置于前台
-	SetForegroundWindow(hwnd)
-
-	// 再次检查窗口是否可见
-	return IsWindowVisible(hwnd) && !IsIconic(hwnd)
-}
-
 // BringWindowToTop
 // @author: [Fantasia](https://www.npc0.com)
 // @function: BringWindowToTop
@@ -237,232 +146,4 @@ func EnsureWindowVisible(hwnd syscall.Handle) bool {
 func BringWindowToTop(hwnd syscall.Handle) bool {
 	ret, _, _ := procBringWindowToTop.Call(uintptr(hwnd))
 	return ret != 0
-}
-
-// POINT 结构体用于坐标转换
-type POINT struct {
-	X, Y int32
-}
-
-// ClientToScreen
-// @author: [Fantasia](https://www.npc0.com)
-// @function: ClientToScreen
-// @description: 将窗口客户区坐标转换为屏幕坐标
-// @param: hwnd syscall.Handle 窗口句柄, x, y int 客户区坐标
-// @return: (int, int) 屏幕坐标
-func ClientToScreen(hwnd syscall.Handle, x, y int) (int, int) {
-	pt := POINT{X: int32(x), Y: int32(y)}
-	procClientToScreen.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&pt)))
-	return int(pt.X), int(pt.Y)
-}
-
-// GetCursorPos
-// @author: [Fantasia](https://www.npc0.com)
-// @function: GetCursorPos
-// @description: 获取当前鼠标光标位置
-// @return: (int, int) 屏幕坐标
-func GetCursorPos() (int, int) {
-	var pt POINT
-	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
-	return int(pt.X), int(pt.Y)
-}
-
-// SetCursorPos
-// @author: [Fantasia](https://www.npc0.com)
-// @function: SetCursorPos
-// @description: 设置鼠标光标位置
-// @param: x, y int 屏幕坐标
-// @return: bool
-func SetCursorPos(x, y int) bool {
-	ret, _, _ := procSetCursorPos.Call(uintptr(x), uintptr(y))
-	return ret != 0
-}
-
-// MOUSEINPUT 结构体
-type MOUSEINPUT struct {
-	Dx          int32
-	Dy          int32
-	MouseData   uint32
-	DwFlags     uint32
-	Time        uint32
-	DwExtraInfo uintptr
-}
-
-// KEYBDINPUT 结构体
-type KEYBDINPUT struct {
-	WVk         uint16
-	WScan       uint16
-	DwFlags     uint32
-	Time        uint32
-	DwExtraInfo uintptr
-	Unused      [8]byte
-}
-
-// INPUT 结构体
-type INPUT struct {
-	Type uint32
-	Mi   MOUSEINPUT
-	_    [8]byte // padding to match the largest union member
-}
-
-// ClickWindowUsingHandleEnhanced
-// @author: [Fantasia](https://www.npc0.com)
-// @function: ClickWindowUsingHandleEnhanced
-// @description: 增强版基于句柄的点击，确保窗口激活并获得焦点后再发送消息
-// @param: hwnd syscall.Handle 窗口句柄, x, y int 窗口内坐标
-// @return: bool
-func ClickWindowUsingHandleEnhanced(hwnd syscall.Handle, x, y int) bool {
-	const (
-		WM_MOUSEMOVE   = 0x0200
-		WM_LBUTTONDOWN = 0x0201
-		WM_LBUTTONUP   = 0x0202
-		WM_ACTIVATE    = 0x0006
-		WM_SETFOCUS    = 0x0007
-		WA_ACTIVE      = 1
-		MK_LBUTTON     = 0x0001
-	)
-
-	// 1. 确保窗口可见
-	if !IsWindowVisible(hwnd) {
-		const SW_SHOW = 5
-		ShowWindow(hwnd, SW_SHOW)
-	}
-
-	// 2. 恢复最小化窗口
-	if IsIconic(hwnd) {
-		const SW_RESTORE = 9
-		ShowWindow(hwnd, SW_RESTORE)
-	}
-
-	// 3. 将窗口置于前台（多次尝试确保成功）
-	SetForegroundWindow(hwnd)
-	BringWindowToTop(hwnd)
-	procSetActiveWindow.Call(uintptr(hwnd))
-	SetForegroundWindow(hwnd) // 再次尝试
-
-	// 4. 尝试设置焦点到窗口
-	procSetFocus.Call(uintptr(hwnd))
-	procSendMessage.Call(
-		uintptr(hwnd),
-		WM_SETFOCUS,
-		0,
-		0,
-	)
-
-	// 5. 发送激活消息
-	procSendMessage.Call(
-		uintptr(hwnd),
-		WM_ACTIVATE,
-		WA_ACTIVE,
-		0,
-	)
-
-	// 将坐标打包到lParam中
-	lParam := uintptr((uint32(y) << 16) | (uint32(x) & 0xFFFF))
-
-	// 6. 先发送鼠标移动消息（确保鼠标在正确位置）
-	procSendMessage.Call(
-		uintptr(hwnd),
-		WM_MOUSEMOVE,
-		0,
-		lParam,
-	)
-
-	// 7. 发送鼠标按下消息（使用 MK_LBUTTON 标志）
-	ret1, _, errDown := procSendMessage.Call(
-		uintptr(hwnd),
-		WM_LBUTTONDOWN,
-		MK_LBUTTON,
-		lParam,
-	)
-
-	// 8. 再次发送鼠标按下消息（某些窗口需要多次确认）
-	procSendMessage.Call(
-		uintptr(hwnd),
-		WM_LBUTTONDOWN,
-		MK_LBUTTON,
-		lParam,
-	)
-
-	// 9. 发送鼠标释放消息
-	ret2, _, errUp := procSendMessage.Call(
-		uintptr(hwnd),
-		WM_LBUTTONUP,
-		0,
-		lParam,
-	)
-
-	// 10. 再次发送鼠标释放消息（确保释放）
-	procSendMessage.Call(
-		uintptr(hwnd),
-		WM_LBUTTONUP,
-		0,
-		lParam,
-	)
-
-	success := ret1 != 0 || ret2 != 0
-	if success {
-		fmt.Printf("[ClickWindowUsingHandleEnhanced] 基于句柄的增强点击成功: 坐标 (%d, %d)\n", x, y)
-		return true
-	}
-
-	fmt.Printf("[ClickWindowUsingHandleEnhanced] 句柄消息返回0，尝试使用SendInput注入: 坐标 (%d, %d), ret1=%d, ret2=%d, errDown=%v, errUp=%v\n",
-		x, y, ret1, ret2, errDown, errUp)
-	return clickWindowUsingSendInput(hwnd, x, y)
-}
-
-// ClickWindowEnhanced
-// @author: [Fantasia](https://www.npc0.com)
-// @function: ClickWindowEnhanced
-// @description: 增强版窗口点击，使用基于句柄的点击方法
-// @param: hwnd syscall.Handle 窗口句柄, x, y int 窗口内坐标
-// @return: bool
-func ClickWindowEnhanced(hwnd syscall.Handle, x, y int) bool {
-	fmt.Printf("[ClickWindowEnhanced] 尝试点击坐标 (%d, %d)...\n", x, y)
-	return ClickWindowUsingHandleEnhanced(hwnd, x, y)
-}
-
-func clickWindowUsingSendInput(hwnd syscall.Handle, x, y int) bool {
-	const (
-		INPUT_MOUSE          = 0
-		MOUSEEVENTF_LEFTDOWN = 0x0002
-		MOUSEEVENTF_LEFTUP   = 0x0004
-	)
-
-	screenX, screenY := ClientToScreen(hwnd, x, y)
-	origX, origY := GetCursorPos()
-
-	if !SetCursorPos(screenX, screenY) {
-		fmt.Printf("[ClickWindowUsingHandleEnhanced] SendInput回退失败: 无法移动鼠标到屏幕坐标 (%d, %d)\n", screenX, screenY)
-		return false
-	}
-	defer SetCursorPos(origX, origY)
-
-	inputs := []INPUT{
-		{
-			Type: INPUT_MOUSE,
-			Mi: MOUSEINPUT{
-				DwFlags: MOUSEEVENTF_LEFTDOWN,
-			},
-		},
-		{
-			Type: INPUT_MOUSE,
-			Mi: MOUSEINPUT{
-				DwFlags: MOUSEEVENTF_LEFTUP,
-			},
-		},
-	}
-
-	ret, _, err := procSendInput.Call(
-		uintptr(len(inputs)),
-		uintptr(unsafe.Pointer(&inputs[0])),
-		unsafe.Sizeof(inputs[0]),
-	)
-	if ret == 0 {
-		fmt.Printf("[ClickWindowUsingHandleEnhanced] SendInput回退失败: %v\n", err)
-		return false
-	}
-
-	fmt.Printf("[ClickWindowUsingHandleEnhanced] SendInput回退点击成功: 屏幕坐标 (%d, %d)\n", screenX, screenY)
-	return true
 }
