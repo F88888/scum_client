@@ -149,46 +149,6 @@ func SendKeyToWindow(hwnd syscall.Handle, vkCode uint16) bool {
 	return ret1 != 0 && ret2 != 0
 }
 
-// ClickWindow
-// @author: [Fantasia](https://www.npc0.com)
-// @function: ClickWindow
-// @description: 向指定窗口发送鼠标点击消息（使用窗口内坐标）
-// @param: hwnd syscall.Handle 窗口句柄, x, y int 窗口内坐标
-// @return: bool
-func ClickWindow(hwnd syscall.Handle, x, y int) bool {
-	const (
-		WM_LBUTTONDOWN = 0x0201
-		WM_LBUTTONUP   = 0x0202
-	)
-
-	// 将坐标打包到lParam中：lParam = (y << 16) | (x & 0xFFFF)
-	lParam := uintptr((uint32(y) << 16) | (uint32(x) & 0xFFFF))
-
-	// 发送鼠标按下消息
-	ret1, _, _ := procPostMessage.Call(
-		uintptr(hwnd),
-		WM_LBUTTONDOWN,
-		0, // wParam: MK_LBUTTON (0x0001) 可以设为0，因为PostMessage不需要
-		lParam,
-	)
-
-	// 发送鼠标释放消息
-	ret2, _, _ := procPostMessage.Call(
-		uintptr(hwnd),
-		WM_LBUTTONUP,
-		0,
-		lParam,
-	)
-
-	success := ret1 != 0 && ret2 != 0
-	if success {
-		fmt.Printf("[ClickWindow] 点击成功: 坐标 (%d, %d), WM_LBUTTONDOWN返回: %d, WM_LBUTTONUP返回: %d\n", x, y, ret1, ret2)
-	} else {
-		fmt.Printf("[ClickWindow] 点击失败: 坐标 (%d, %d), WM_LBUTTONDOWN返回: %d, WM_LBUTTONUP返回: %d\n", x, y, ret1, ret2)
-	}
-	return success
-}
-
 // IsWindow
 // @author: [Fantasia](https://www.npc0.com)
 // @function: IsWindow
@@ -345,55 +305,6 @@ type INPUT struct {
 	_    [8]byte // padding to match the largest union member
 }
 
-// ClickWindowUsingSendMessage
-// @author: [Fantasia](https://www.npc0.com)
-// @function: ClickWindowUsingSendMessage
-// @description: 使用SendMessage向窗口发送鼠标点击消息（同步方式）
-// @param: hwnd syscall.Handle 窗口句柄, x, y int 窗口内坐标
-// @return: bool
-func ClickWindowUsingSendMessage(hwnd syscall.Handle, x, y int) bool {
-	const (
-		WM_MOUSEMOVE   = 0x0200
-		WM_LBUTTONDOWN = 0x0201
-		WM_LBUTTONUP   = 0x0202
-	)
-
-	// 将坐标打包到lParam中
-	lParam := uintptr((uint32(y) << 16) | (uint32(x) & 0xFFFF))
-
-	// 先发送鼠标移动消息
-	procSendMessage.Call(
-		uintptr(hwnd),
-		WM_MOUSEMOVE,
-		0,
-		lParam,
-	)
-
-	// 发送鼠标按下消息
-	ret1, _, _ := procSendMessage.Call(
-		uintptr(hwnd),
-		WM_LBUTTONDOWN,
-		1, // MK_LBUTTON
-		lParam,
-	)
-
-	// 发送鼠标释放消息
-	ret2, _, _ := procSendMessage.Call(
-		uintptr(hwnd),
-		WM_LBUTTONUP,
-		0,
-		lParam,
-	)
-
-	success := ret1 != 0 && ret2 != 0
-	if success {
-		fmt.Printf("[ClickWindowUsingSendMessage] 点击成功: 坐标 (%d, %d)\n", x, y)
-	} else {
-		fmt.Printf("[ClickWindowUsingSendMessage] 点击失败: 坐标 (%d, %d)\n", x, y)
-	}
-	return success
-}
-
 // ClickWindowUsingHandleEnhanced
 // @author: [Fantasia](https://www.npc0.com)
 // @function: ClickWindowUsingHandleEnhanced
@@ -406,7 +317,9 @@ func ClickWindowUsingHandleEnhanced(hwnd syscall.Handle, x, y int) bool {
 		WM_LBUTTONDOWN = 0x0201
 		WM_LBUTTONUP   = 0x0202
 		WM_ACTIVATE    = 0x0006
+		WM_SETFOCUS    = 0x0007
 		WA_ACTIVE      = 1
+		MK_LBUTTON     = 0x0001
 	)
 
 	// 1. 确保窗口可见
@@ -421,13 +334,20 @@ func ClickWindowUsingHandleEnhanced(hwnd syscall.Handle, x, y int) bool {
 		ShowWindow(hwnd, SW_RESTORE)
 	}
 
-	// 3. 将窗口置于前台
+	// 3. 将窗口置于前台（多次尝试确保成功）
 	SetForegroundWindow(hwnd)
 	BringWindowToTop(hwnd)
 	procSetActiveWindow.Call(uintptr(hwnd))
+	SetForegroundWindow(hwnd) // 再次尝试
 
-	// 4. 尝试设置焦点到窗口（如果窗口有子控件，可能需要设置到子控件）
+	// 4. 尝试设置焦点到窗口
 	procSetFocus.Call(uintptr(hwnd))
+	procSendMessage.Call(
+		uintptr(hwnd),
+		WM_SETFOCUS,
+		0,
+		0,
+	)
 
 	// 5. 发送激活消息
 	procSendMessage.Call(
@@ -437,14 +357,10 @@ func ClickWindowUsingHandleEnhanced(hwnd syscall.Handle, x, y int) bool {
 		0,
 	)
 
-	// 短暂延迟，确保窗口有时间响应激活消息
-	// 注意：这里不能直接使用 time.Sleep，因为 windows.go 没有导入 time 包
-	// 如果需要延迟，可以在调用此函数前添加，或者使用其他方式
-
 	// 将坐标打包到lParam中
 	lParam := uintptr((uint32(y) << 16) | (uint32(x) & 0xFFFF))
 
-	// 6. 发送鼠标移动消息
+	// 6. 先发送鼠标移动消息（确保鼠标在正确位置）
 	procSendMessage.Call(
 		uintptr(hwnd),
 		WM_MOUSEMOVE,
@@ -453,7 +369,6 @@ func ClickWindowUsingHandleEnhanced(hwnd syscall.Handle, x, y int) bool {
 	)
 
 	// 7. 发送鼠标按下消息（使用 MK_LBUTTON 标志）
-	const MK_LBUTTON = 0x0001
 	ret1, _, _ := procSendMessage.Call(
 		uintptr(hwnd),
 		WM_LBUTTONDOWN,
@@ -461,11 +376,24 @@ func ClickWindowUsingHandleEnhanced(hwnd syscall.Handle, x, y int) bool {
 		lParam,
 	)
 
-	// 8. 短暂延迟，模拟真实点击
-	// time.Sleep(10 * time.Millisecond) // 如果需要可以取消注释
+	// 8. 再次发送鼠标按下消息（某些窗口需要多次确认）
+	procSendMessage.Call(
+		uintptr(hwnd),
+		WM_LBUTTONDOWN,
+		MK_LBUTTON,
+		lParam,
+	)
 
 	// 9. 发送鼠标释放消息
 	ret2, _, _ := procSendMessage.Call(
+		uintptr(hwnd),
+		WM_LBUTTONUP,
+		0,
+		lParam,
+	)
+
+	// 10. 再次发送鼠标释放消息（确保释放）
+	procSendMessage.Call(
 		uintptr(hwnd),
 		WM_LBUTTONUP,
 		0,
@@ -481,130 +409,13 @@ func ClickWindowUsingHandleEnhanced(hwnd syscall.Handle, x, y int) bool {
 	return success
 }
 
-// ClickWindowUsingInput
-// @author: [Fantasia](https://www.npc0.com)
-// @function: ClickWindowUsingInput
-// @description: 使用SendInput模拟物理鼠标点击（最接近真实用户操作）
-// @param: hwnd syscall.Handle 窗口句柄, x, y int 窗口内坐标
-// @return: bool
-func ClickWindowUsingInput(hwnd syscall.Handle, x, y int) bool {
-	const (
-		INPUT_MOUSE          = 0
-		MOUSEEVENTF_MOVE     = 0x0001
-		MOUSEEVENTF_ABSOLUTE = 0x8000
-		MOUSEEVENTF_LEFTDOWN = 0x0002
-		MOUSEEVENTF_LEFTUP   = 0x0004
-	)
-
-	// 将窗口坐标转换为屏幕坐标
-	screenX, screenY := ClientToScreen(hwnd, x, y)
-
-	// 保存当前鼠标位置
-	oldX, oldY := GetCursorPos()
-
-	// 移动鼠标到目标位置
-	if !SetCursorPos(screenX, screenY) {
-		fmt.Printf("[ClickWindowUsingInput] 移动鼠标失败: 目标坐标 (%d, %d)\n", screenX, screenY)
-		return false
-	}
-
-	// 创建鼠标按下事件
-	inputDown := INPUT{
-		Type: INPUT_MOUSE,
-		Mi: MOUSEINPUT{
-			Dx:        0,
-			Dy:        0,
-			MouseData: 0,
-			DwFlags:   MOUSEEVENTF_LEFTDOWN,
-			Time:      0,
-		},
-	}
-
-	// 创建鼠标释放事件
-	inputUp := INPUT{
-		Type: INPUT_MOUSE,
-		Mi: MOUSEINPUT{
-			Dx:        0,
-			Dy:        0,
-			MouseData: 0,
-			DwFlags:   MOUSEEVENTF_LEFTUP,
-			Time:      0,
-		},
-	}
-
-	// 发送鼠标按下事件
-	ret1, _, _ := procSendInput.Call(
-		1,
-		uintptr(unsafe.Pointer(&inputDown)),
-		uintptr(unsafe.Sizeof(inputDown)),
-	)
-
-	// 发送鼠标释放事件
-	ret2, _, _ := procSendInput.Call(
-		1,
-		uintptr(unsafe.Pointer(&inputUp)),
-		uintptr(unsafe.Sizeof(inputUp)),
-	)
-
-	// 恢复鼠标位置（可选）
-	// SetCursorPos(oldX, oldY)
-
-	success := ret1 != 0 && ret2 != 0
-	if success {
-		fmt.Printf("[ClickWindowUsingInput] 物理点击成功: 窗口坐标 (%d, %d) -> 屏幕坐标 (%d, %d), 原鼠标位置 (%d, %d)\n",
-			x, y, screenX, screenY, oldX, oldY)
-	} else {
-		fmt.Printf("[ClickWindowUsingInput] 物理点击失败: ret1=%d, ret2=%d\n", ret1, ret2)
-	}
-	return success
-}
-
 // ClickWindowEnhanced
 // @author: [Fantasia](https://www.npc0.com)
 // @function: ClickWindowEnhanced
-// @description: 增强版窗口点击，尝试多种方式确保点击成功
+// @description: 增强版窗口点击，使用基于句柄的点击方法
 // @param: hwnd syscall.Handle 窗口句柄, x, y int 窗口内坐标
 // @return: bool
 func ClickWindowEnhanced(hwnd syscall.Handle, x, y int) bool {
-	// 1. 确保窗口可见并激活
-	if !EnsureWindowVisible(hwnd) {
-		fmt.Printf("[ClickWindowEnhanced] 窗口不可见，无法点击\n")
-		return false
-	}
-
-	// 2. 将窗口置于前台
-	SetForegroundWindow(hwnd)
-	BringWindowToTop(hwnd)
-
-	// 短暂延迟，等待窗口激活
-	// time.Sleep(50 * time.Millisecond) // 如果需要可以取消注释
-
 	fmt.Printf("[ClickWindowEnhanced] 尝试点击坐标 (%d, %d)...\n", x, y)
-
-	// 3. 首先尝试使用增强版基于句柄的点击（确保窗口激活）
-	if ClickWindowUsingHandleEnhanced(hwnd, x, y) {
-		fmt.Printf("[ClickWindowEnhanced] 增强版句柄点击方式成功\n")
-		return true
-	}
-
-	// 4. 如果增强版句柄点击失败，尝试 SendInput（最可靠，模拟真实鼠标操作）
-	if ClickWindowUsingInput(hwnd, x, y) {
-		fmt.Printf("[ClickWindowEnhanced] SendInput 方式成功\n")
-		return true
-	}
-
-	// 5. 如果 SendInput 失败，尝试 SendMessage
-	if ClickWindowUsingSendMessage(hwnd, x, y) {
-		fmt.Printf("[ClickWindowEnhanced] SendMessage 方式成功\n")
-		return true
-	}
-
-	// 6. 最后尝试 PostMessage（原有方式）
-	if ClickWindow(hwnd, x, y) {
-		fmt.Printf("[ClickWindowEnhanced] PostMessage 方式成功\n")
-		return true
-	}
-
-	fmt.Printf("[ClickWindowEnhanced] 所有点击方式均失败\n")
-	return false
+	return ClickWindowUsingHandleEnhanced(hwnd, x, y)
 }
