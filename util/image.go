@@ -9,8 +9,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"qq_client/global"
 	_const "qq_client/internal/const"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -39,6 +41,84 @@ func ClearTextPositionCache() {
 	defer cacheMutex.Unlock()
 	textPositionCache = make(map[string]*TextPositionCache)
 	fmt.Println("文本位置缓存已清空")
+}
+
+// getDesktopPath 获取桌面路径
+// @description: 获取当前用户的桌面路径
+// @return: string, error
+func getDesktopPath() (string, error) {
+	if runtime.GOOS == "windows" {
+		// Windows: 使用 USERPROFILE 环境变量
+		userProfile := os.Getenv("USERPROFILE")
+		if userProfile == "" {
+			return "", fmt.Errorf("无法获取用户目录")
+		}
+		desktopPath := filepath.Join(userProfile, "Desktop")
+		return desktopPath, nil
+	}
+	// 其他系统使用 HOME 环境变量
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("无法获取用户目录: %v", err)
+	}
+	desktopPath := filepath.Join(homeDir, "Desktop")
+	return desktopPath, nil
+}
+
+// moveImageToDesktop 将图片移动到桌面
+// @description: 将图片移动到桌面，如果文件已存在则添加时间戳
+// @param: imagePath string 图片路径
+// @return: error
+func moveImageToDesktop(imagePath string) error {
+	desktopPath, err := getDesktopPath()
+	if err != nil {
+		return fmt.Errorf("获取桌面路径失败: %v", err)
+	}
+
+	// 确保桌面目录存在
+	if err := os.MkdirAll(desktopPath, 0755); err != nil {
+		return fmt.Errorf("创建桌面目录失败: %v", err)
+	}
+
+	// 获取文件名
+	fileName := filepath.Base(imagePath)
+	destPath := filepath.Join(desktopPath, fileName)
+
+	// 如果文件已存在，添加时间戳
+	if _, err := os.Stat(destPath); err == nil {
+		ext := filepath.Ext(fileName)
+		nameWithoutExt := fileName[:len(fileName)-len(ext)]
+		timestamp := time.Now().Format("20060102_150405")
+		destPath = filepath.Join(desktopPath, fmt.Sprintf("%s_%s%s", nameWithoutExt, timestamp, ext))
+	}
+
+	// 移动文件
+	if err := os.Rename(imagePath, destPath); err != nil {
+		// 如果重命名失败（可能在不同磁盘），尝试复制后删除
+		srcFile, err := os.Open(imagePath)
+		if err != nil {
+			return fmt.Errorf("打开源文件失败: %v", err)
+		}
+		defer srcFile.Close()
+
+		dstFile, err := os.Create(destPath)
+		if err != nil {
+			return fmt.Errorf("创建目标文件失败: %v", err)
+		}
+		defer dstFile.Close()
+
+		if _, err := io.Copy(dstFile, srcFile); err != nil {
+			return fmt.Errorf("复制文件失败: %v", err)
+		}
+
+		// 删除源文件
+		if err := os.Remove(imagePath); err != nil {
+			fmt.Printf("警告: 删除源文件失败: %v\n", err)
+		}
+	}
+
+	fmt.Printf("已将检测不到文本的图片移动到桌面: %s\n", destPath)
+	return nil
 }
 
 // getTextPositionFromCache 从缓存获取文本位置
@@ -91,7 +171,20 @@ func searchTextInFullScreen(hand syscall.Handle, targetText string) (*TextPositi
 	if err != nil {
 		return nil, fmt.Errorf("全屏截图失败: %v", err)
 	}
-	defer os.Remove(imagePath)
+	shouldMoveToDesktop := false
+	defer func() {
+		if shouldMoveToDesktop {
+			// 检测不到文本，移动到桌面
+			if err = moveImageToDesktop(imagePath); err != nil {
+				fmt.Printf("移动图片到桌面失败: %v\n", err)
+				// 如果移动失败，删除原文件
+				_ = os.Remove(imagePath)
+			}
+		} else {
+			// 正常情况，删除临时文件
+			_ = os.Remove(imagePath)
+		}
+	}()
 
 	// 读取图片
 	imageData, err := os.ReadFile(imagePath)
@@ -142,6 +235,11 @@ func searchTextInFullScreen(hand syscall.Handle, targetText string) (*TextPositi
 	}
 
 	// 检查识别结果
+	if ocrResult.Code == 101 {
+		// 检测不到文本，标记为移动到桌面
+		shouldMoveToDesktop = true
+		return nil, fmt.Errorf("OCR识别失败，code: %d (图片中无文本)", ocrResult.Code)
+	}
 	if ocrResult.Code != 100 {
 		return nil, fmt.Errorf("OCR识别失败，code: %d", ocrResult.Code)
 	}
@@ -266,6 +364,17 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 	// 使用缓存的位置进行识别（仅在使用已有缓存时验证）
 	var ocrVerified bool
 	var hasSuccessfulScreenshot bool
+	var imagesToMove []string // 需要移动到桌面的图片列表
+	defer func() {
+		// 函数返回时，处理所有需要移动到桌面的图片
+		for _, imgPath := range imagesToMove {
+			if err := moveImageToDesktop(imgPath); err != nil {
+				fmt.Printf("移动图片到桌面失败: %v\n", err)
+				// 如果移动失败，删除原文件
+				_ = os.Remove(imgPath)
+			}
+		}
+	}()
 	for i := 1; i <= 3; i++ {
 		// 截图指定区域
 		imagePath, err := ScreenshotGrayscale(hand, cache.X1, cache.Y1, cache.X2, cache.Y2)
@@ -273,7 +382,14 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 			fmt.Printf("第%d次截图失败: %v\n", i, err)
 			continue
 		}
-		defer os.Remove(imagePath)
+		shouldMoveToDesktop := false
+		defer func(imgPath string, shouldMove *bool) {
+			if !*shouldMove {
+				// 正常情况，删除临时文件
+				_ = os.Remove(imgPath)
+			}
+			// 如果 shouldMove 为 true，会在 imagesToMove 中处理
+		}(imagePath, &shouldMoveToDesktop)
 		hasSuccessfulScreenshot = true
 
 		// 读取图片
@@ -356,6 +472,11 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 				fmt.Printf("第%d次OCR识别成功但文本不匹配，已尝试多语言: %v\n", i, textVariants)
 			}
 			ocrVerified = true // OCR成功识别了文本，只是不匹配
+		} else if ocrResult.Code == 101 {
+			// 检测不到文本，标记为移动到桌面
+			shouldMoveToDesktop = true
+			imagesToMove = append(imagesToMove, imagePath)
+			fmt.Printf("第%d次OCR识别失败 (Code: %d - 图片中无文本)，目标文本 '%s' (支持多语言: %v)\n", i, ocrResult.Code, test, textVariants)
 		} else {
 			// OCR识别失败，记录尝试的多语言文本
 			fmt.Printf("第%d次OCR识别失败 (Code: %d)，目标文本 '%s' (支持多语言: %v)\n", i, ocrResult.Code, test, textVariants)
@@ -400,10 +521,21 @@ func ExtractTextFromArea(hand syscall.Handle, x1, y1, x2, y2 int) (string, error
 	if imagePath, err = ScreenshotGrayscale(hand, x1, y1, x2, y2); err != nil {
 		return "", err
 	}
+	shouldMoveToDesktop := false
 	// 移除图片
-	defer func(name string) {
-		_ = os.Remove(name)
-	}(imagePath)
+	defer func(name string, shouldMove *bool) {
+		if *shouldMove {
+			// 检测不到文本，移动到桌面
+			if err := moveImageToDesktop(name); err != nil {
+				fmt.Printf("移动图片到桌面失败: %v\n", err)
+				// 如果移动失败，删除原文件
+				_ = os.Remove(name)
+			}
+		} else {
+			// 正常情况，删除临时文件
+			_ = os.Remove(name)
+		}
+	}(imagePath, &shouldMoveToDesktop)
 
 	// 读取图片
 	var imageData []byte
@@ -478,7 +610,8 @@ func ExtractTextFromArea(hand syscall.Handle, x1, y1, x2, y2 int) (string, error
 
 		return strings.Join(texts, " "), nil
 	} else if ocrResult.Code == 101 {
-		// 图片中无文本
+		// 图片中无文本，标记为移动到桌面
+		shouldMoveToDesktop = true
 		return "", fmt.Errorf("图片中无文本")
 	} else {
 		// 识别失败
