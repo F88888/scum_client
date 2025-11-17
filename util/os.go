@@ -71,9 +71,7 @@ func captureWindowImage(hwnd syscall.Handle) (*image.RGBA, error) {
 
 	// 检查窗口是否最小化
 	isMinimized := IsIconic(hwnd)
-	if isMinimized {
-		fmt.Printf("[截图] 检测到窗口已最小化，使用 PrintWindow API 截图（支持最小化窗口）\n")
-	} else {
+	if !isMinimized {
 		// 窗口未最小化时，尝试激活窗口以获得更好的截图效果（但不强制）
 		// 如果窗口不可见，尝试显示它
 		if !IsWindowVisible(hwnd) {
@@ -90,25 +88,13 @@ func captureWindowImage(hwnd syscall.Handle) (*image.RGBA, error) {
 
 	var lastErr error
 	for attempt := 1; attempt <= _const.ScreenshotMaxRetries; attempt++ {
-		// 尝试截图
-		if isMinimized {
-			fmt.Printf("[截图] 第%d次尝试: 开始截图（窗口最小化）...\n", attempt)
-		} else {
-			fmt.Printf("[截图] 第%d次尝试: 开始截图...\n", attempt)
-		}
 
 		img, err := captureWindowImageInternal(hwnd, isMinimized)
 		if err == nil {
-			if isMinimized {
-				fmt.Printf("[截图] 第%d次尝试: 截图成功（窗口最小化）\n", attempt)
-			} else {
-				fmt.Printf("[截图] 第%d次尝试: 截图成功\n", attempt)
-			}
 			return img, nil
 		}
 
 		lastErr = err
-		fmt.Printf("[截图] 第%d次尝试失败: %v\n", attempt, err)
 
 		// 如果是窗口状态相关错误，重试
 		if strings.Contains(err.Error(), "无法获取窗口") ||
@@ -134,6 +120,7 @@ func captureWindowImage(hwnd syscall.Handle) (*image.RGBA, error) {
 func captureWindowImageInternal(hwnd syscall.Handle, isMinimized bool) (*image.RGBA, error) {
 	// 获取窗口的客户区域大小
 	var rect RECT
+	const PW_RENDERFULLCONTENT = 0x00000002
 	ret, _, _ := procGetClientRect.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&rect)))
 	if ret == 0 {
 		return nil, errors.New("无法获取窗口客户区域")
@@ -173,24 +160,13 @@ func captureWindowImageInternal(hwnd syscall.Handle, isMinimized bool) (*image.R
 	// 优先使用 PrintWindow API，支持 DirectX/OpenGL 渲染的窗口和最小化窗口
 	// PW_RENDERFULLCONTENT = 0x00000002 (Windows 8.1+)
 	// 这个标志可以捕获使用硬件加速渲染的内容，并且支持最小化窗口
-	const PW_RENDERFULLCONTENT = 0x00000002
-	ret, _, _ = procPrintWindow.Call(uintptr(hwnd), hdcMem, PW_RENDERFULLCONTENT)
-	if ret != 0 {
-		// PrintWindow 成功
-		if isMinimized {
-			fmt.Printf("[截图] 使用 PrintWindow API 成功捕获最小化窗口内容 (窗口大小: %dx%d)\n", width, height)
-		} else {
-			fmt.Printf("[截图] 使用 PrintWindow API 成功捕获窗口内容 (窗口大小: %dx%d)\n", width, height)
-		}
-	} else {
+	if ret, _, _ = procPrintWindow.Call(uintptr(hwnd), hdcMem, PW_RENDERFULLCONTENT); ret == 0 {
 		// PrintWindow 失败
 		if isMinimized {
 			// 最小化窗口只能使用 PrintWindow，如果失败则返回错误
 			return nil, errors.New("无法使用 PrintWindow 捕获最小化窗口内容")
 		}
 
-		// 非最小化窗口，回退到 BitBlt 方法
-		fmt.Printf("[截图] PrintWindow 失败，尝试使用 BitBlt 方法...\n")
 		// 获取窗口的设备上下文
 		hdcWindow, _, _ := procGetDC.Call(uintptr(hwnd))
 		if hdcWindow == 0 {
@@ -204,7 +180,6 @@ func captureWindowImageInternal(hwnd syscall.Handle, isMinimized bool) (*image.R
 		if ret == 0 {
 			return nil, errors.New("无法复制窗口内容（BitBlt 和 PrintWindow 都失败，可能是窗口使用硬件加速渲染）")
 		}
-		fmt.Printf("[截图] 使用 BitBlt 方法成功捕获窗口内容\n")
 	}
 
 	// 准备位图信息结构
