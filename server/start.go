@@ -216,10 +216,11 @@ func Start() {
 
 		// 点击登录
 		logInfo("开始登录...")
-		if err := util.ClickTextCenter(hand, "CONTINUE"); err != nil {
+		if err = util.ClickTextCenter(hand, "CONTINUE"); err != nil {
 			logError("点击CONTINUE失败: %v", err)
 			errorNumber++
 		}
+		logInfo("点击登录成功...")
 		time.Sleep(1 * time.Second)
 		return
 

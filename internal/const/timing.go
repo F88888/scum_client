@@ -30,4 +30,8 @@ const (
 	OCRServiceHealthCheckTimeout = 3 * time.Second  // OCR 服务健康检查超时时间
 	OCRServiceRestartWaitTime    = 2 * time.Second  // OCR 服务重启等待时间
 	OCRServiceAPITimeout         = 10 * time.Second // OCR 服务 API 请求超时时间
+
+	// 截图相关常量
+	ScreenshotMaxRetries = 3                      // 截图最大重试次数
+	ScreenshotRetryDelay = 200 * time.Millisecond // 截图重试延迟时间
 )

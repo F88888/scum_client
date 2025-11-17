@@ -16,6 +16,10 @@ var (
 	procGetWindowText       = user32.NewProc("GetWindowTextW")
 	procGetWindowTextLength = user32.NewProc("GetWindowTextLengthW")
 	procPostMessage         = user32.NewProc("PostMessageW")
+	procIsWindow            = user32.NewProc("IsWindow")
+	procIsWindowVisible     = user32.NewProc("IsWindowVisible")
+	procIsIconic            = user32.NewProc("IsIconic")
+	procShowWindow          = user32.NewProc("ShowWindow")
 )
 
 // FindWindow
@@ -167,4 +171,83 @@ func ClickWindow(hwnd syscall.Handle, x, y int) bool {
 	)
 
 	return ret1 != 0 && ret2 != 0
+}
+
+// IsWindow
+// @author: [Fantasia](https://www.npc0.com)
+// @function: IsWindow
+// @description: 检查窗口句柄是否有效
+// @param: hwnd syscall.Handle 窗口句柄
+// @return: bool
+func IsWindow(hwnd syscall.Handle) bool {
+	ret, _, _ := procIsWindow.Call(uintptr(hwnd))
+	return ret != 0
+}
+
+// IsWindowVisible
+// @author: [Fantasia](https://www.npc0.com)
+// @function: IsWindowVisible
+// @description: 检查窗口是否可见
+// @param: hwnd syscall.Handle 窗口句柄
+// @return: bool
+func IsWindowVisible(hwnd syscall.Handle) bool {
+	ret, _, _ := procIsWindowVisible.Call(uintptr(hwnd))
+	return ret != 0
+}
+
+// IsIconic
+// @author: [Fantasia](https://www.npc0.com)
+// @function: IsIconic
+// @description: 检查窗口是否最小化
+// @param: hwnd syscall.Handle 窗口句柄
+// @return: bool
+func IsIconic(hwnd syscall.Handle) bool {
+	ret, _, _ := procIsIconic.Call(uintptr(hwnd))
+	return ret != 0
+}
+
+// ShowWindow
+// @author: [Fantasia](https://www.npc0.com)
+// @function: ShowWindow
+// @description: 显示或隐藏窗口
+// @param: hwnd syscall.Handle 窗口句柄, nCmdShow int 显示命令（SW_RESTORE=9, SW_SHOW=5）
+// @return: bool
+func ShowWindow(hwnd syscall.Handle, nCmdShow int) bool {
+	ret, _, _ := procShowWindow.Call(uintptr(hwnd), uintptr(nCmdShow))
+	return ret != 0
+}
+
+// EnsureWindowVisible
+// @author: [Fantasia](https://www.npc0.com)
+// @function: EnsureWindowVisible
+// @description: 确保窗口可见且未最小化，如果不可见则尝试恢复
+// @param: hwnd syscall.Handle 窗口句柄
+// @return: bool 是否成功
+func EnsureWindowVisible(hwnd syscall.Handle) bool {
+	if hwnd == 0 {
+		return false
+	}
+
+	// 检查窗口句柄是否有效
+	if !IsWindow(hwnd) {
+		return false
+	}
+
+	// 如果窗口最小化，恢复窗口
+	if IsIconic(hwnd) {
+		const SW_RESTORE = 9
+		ShowWindow(hwnd, SW_RESTORE)
+	}
+
+	// 如果窗口不可见，显示窗口
+	if !IsWindowVisible(hwnd) {
+		const SW_SHOW = 5
+		ShowWindow(hwnd, SW_SHOW)
+	}
+
+	// 尝试将窗口置于前台
+	SetForegroundWindow(hwnd)
+
+	// 再次检查窗口是否可见
+	return IsWindowVisible(hwnd) && !IsIconic(hwnd)
 }

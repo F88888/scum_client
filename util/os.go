@@ -11,8 +11,10 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	_const "qq_client/internal/const"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -55,7 +57,51 @@ type BITMAPINFO struct {
 }
 
 // captureWindowImage 截取指定窗口的图像
+// @description: 截取指定窗口的图像，包含窗口状态检查和重试机制
 func captureWindowImage(hwnd syscall.Handle) (*image.RGBA, error) {
+	var lastErr error
+	for attempt := 1; attempt <= _const.ScreenshotMaxRetries; attempt++ {
+		// 检查窗口状态并尝试恢复
+		if !EnsureWindowVisible(hwnd) {
+			if attempt < _const.ScreenshotMaxRetries {
+				time.Sleep(_const.ScreenshotRetryDelay)
+				continue
+			}
+			return nil, errors.New("窗口不可见或无效，无法截图")
+		}
+
+		// 等待窗口稳定
+		if attempt > 1 {
+			time.Sleep(_const.ScreenshotRetryDelay)
+		}
+
+		// 尝试截图
+		img, err := captureWindowImageInternal(hwnd)
+		if err == nil {
+			return img, nil
+		}
+
+		lastErr = err
+		// 如果是窗口状态相关错误，重试
+		if strings.Contains(err.Error(), "无法获取窗口") ||
+			strings.Contains(err.Error(), "无法获取位图数据") ||
+			strings.Contains(err.Error(), "无法复制窗口内容") {
+			if attempt < _const.ScreenshotMaxRetries {
+				time.Sleep(_const.ScreenshotRetryDelay)
+				continue
+			}
+		} else {
+			// 其他错误直接返回
+			return nil, err
+		}
+	}
+
+	return nil, fmt.Errorf("截图失败（重试%d次）: %v", _const.ScreenshotMaxRetries, lastErr)
+}
+
+// captureWindowImageInternal 截取指定窗口的图像（内部实现）
+// @description: 实际的截图实现，不包含重试逻辑
+func captureWindowImageInternal(hwnd syscall.Handle) (*image.RGBA, error) {
 	// 获取窗口的客户区域大小
 	var rect RECT
 	ret, _, _ := procGetClientRect.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&rect)))
