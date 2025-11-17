@@ -213,6 +213,7 @@ func searchTextInFullScreen(hand syscall.Handle, targetText string) (*TextPositi
 	}
 
 	// 解析OCR响应
+	fmt.Println("responseData", string(responseData))
 	if err = json.Unmarshal(responseData, &ocrResult); err != nil {
 		return nil, fmt.Errorf("解析响应JSON失败: %v", err)
 	}
