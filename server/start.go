@@ -212,7 +212,6 @@ func Start() {
 			// 延时等待切换完成
 			time.Sleep(1 * time.Second)
 			errorNumber++
-			return
 		}
 
 		// 点击登录
