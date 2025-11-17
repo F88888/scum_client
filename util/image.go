@@ -9,13 +9,12 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"qq_client/global"
+	_const "qq_client/internal/const"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
-
-	"scum_client/global"
-	_const "scum_client/internal/const"
 )
 
 // TextPositionCache 文本位置缓存结构

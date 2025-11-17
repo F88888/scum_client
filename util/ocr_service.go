@@ -9,13 +9,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"qq_client/global"
+	_const "qq_client/internal/const"
 	"runtime"
 	"strings"
 	"syscall"
 	"time"
-
-	"scum_client/global"
-	_const "scum_client/internal/const"
 )
 
 var ocrProcess *exec.Cmd
