@@ -225,20 +225,73 @@ func searchTextInFullScreen(hand syscall.Handle, targetText string) (*TextPositi
 		return nil, fmt.Errorf("OCR识别失败，code: %d", ocrResult.Code)
 	}
 
-	// 解析data为数组
-	dataArray, ok := ocrResult.Data.([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("OCR响应data格式错误")
+	// 优先使用新的 items 数组格式，如果没有则回退到旧的 data 数组格式
+	var itemsToProcess []request.OcrItem
+
+	if len(ocrResult.Items) > 0 {
+		// 使用新格式：items 数组
+		itemsToProcess = ocrResult.Items
+	} else {
+		// 向后兼容：尝试解析 data 为数组
+		dataArray, ok := ocrResult.Data.([]interface{})
+		if ok {
+			// 将旧格式转换为新格式
+			for _, item := range dataArray {
+				itemMap, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+
+				text, _ := itemMap["text"].(string)
+				confidence, _ := itemMap["confidence"].(float64)
+				boxData, _ := itemMap["box"].([]interface{})
+
+				// 转换 box 坐标
+				var box [][]float64
+				for _, point := range boxData {
+					pointArray, ok := point.([]interface{})
+					if !ok || len(pointArray) < 2 {
+						continue
+					}
+					x, _ := pointArray[0].(float64)
+					y, _ := pointArray[1].(float64)
+					box = append(box, []float64{x, y})
+				}
+
+				// 提取 position（如果有）
+				var position request.OcrPosition
+				if posMap, ok := itemMap["position"].(map[string]interface{}); ok {
+					if left, ok := posMap["left"].(float64); ok {
+						position.Left = int(left)
+					}
+					if top, ok := posMap["top"].(float64); ok {
+						position.Top = int(top)
+					}
+					if right, ok := posMap["right"].(float64); ok {
+						position.Right = int(right)
+					}
+					if bottom, ok := posMap["bottom"].(float64); ok {
+						position.Bottom = int(bottom)
+					}
+				}
+
+				itemsToProcess = append(itemsToProcess, request.OcrItem{
+					Text:       text,
+					Confidence: confidence,
+					Box:        box,
+					Position:   position,
+				})
+			}
+		}
+	}
+
+	if len(itemsToProcess) == 0 {
+		return nil, fmt.Errorf("OCR响应中未找到识别结果")
 	}
 
 	// 遍历所有识别到的文本，查找目标文本（支持多语言）
-	for _, item := range dataArray {
-		itemMap, ok := item.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		text, _ := itemMap["text"].(string)
+	for _, item := range itemsToProcess {
+		text := item.Text
 		textUpper := strings.ToUpper(strings.TrimSpace(text))
 
 		// 检查是否匹配任何语言版本
@@ -252,51 +305,62 @@ func searchTextInFullScreen(hand syscall.Handle, targetText string) (*TextPositi
 		}
 
 		if matched {
-			// 找到目标文本，提取box坐标
-			boxData, ok := itemMap["box"].([]interface{})
-			if !ok || len(boxData) < 4 {
+			// 找到目标文本，使用 position 或 box 计算坐标
+			var x1, y1, x2, y2 int
+
+			// 优先使用 position 字段（更简单直接）
+			// 检查 position 是否有效（right 和 bottom 应该大于 left 和 top）
+			if item.Position.Right > item.Position.Left && item.Position.Bottom > item.Position.Top {
+				x1 = item.Position.Left
+				y1 = item.Position.Top
+				x2 = item.Position.Right
+				y2 = item.Position.Bottom
+			} else if len(item.Box) >= 4 {
+				// 回退到使用 box 计算最小最大坐标
+				var minX, minY, maxX, maxY float64
+				minX, minY = 999999, 999999
+				maxX, maxY = 0, 0
+
+				for _, point := range item.Box {
+					if len(point) < 2 {
+						continue
+					}
+					x := point[0]
+					y := point[1]
+
+					if x < minX {
+						minX = x
+					}
+					if x > maxX {
+						maxX = x
+					}
+					if y < minY {
+						minY = y
+					}
+					if y > maxY {
+						maxY = y
+					}
+				}
+
+				x1 = int(minX)
+				y1 = int(minY)
+				x2 = int(maxX)
+				y2 = int(maxY)
+			} else {
 				continue
-			}
-
-			// box格式: [[x1,y1], [x2,y2], [x3,y3], [x4,y4]] (顺时针四个角)
-			// 我们需要找到最小和最大坐标
-			var minX, minY, maxX, maxY float64
-			minX, minY = 999999, 999999
-			maxX, maxY = 0, 0
-
-			for _, point := range boxData {
-				pointArray, ok := point.([]interface{})
-				if !ok || len(pointArray) < 2 {
-					continue
-				}
-				x, _ := pointArray[0].(float64)
-				y, _ := pointArray[1].(float64)
-
-				if x < minX {
-					minX = x
-				}
-				if x > maxX {
-					maxX = x
-				}
-				if y < minY {
-					minY = y
-				}
-				if y > maxY {
-					maxY = y
-				}
 			}
 
 			// 创建缓存对象
 			cache := &TextPositionCache{
-				X1:    int(minX),
-				Y1:    int(minY),
-				X2:    int(maxX),
-				Y2:    int(maxY),
+				X1:    x1,
+				Y1:    y1,
+				X2:    x2,
+				Y2:    y2,
 				Found: true,
 			}
 
-			fmt.Printf("全屏搜索成功: 找到文本 '%s' (识别为: '%s') 在位置 [%d,%d,%d,%d]\n",
-				targetText, text, cache.X1, cache.Y1, cache.X2, cache.Y2)
+			fmt.Printf("全屏搜索成功: 找到文本 '%s' (识别为: '%s', 置信度: %.2f) 在位置 [%d,%d,%d,%d]\n",
+				targetText, text, item.Confidence, cache.X1, cache.Y1, cache.X2, cache.Y2)
 			return cache, nil
 		}
 	}
@@ -426,22 +490,69 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 		textVariants := getMultilingualTexts(test)
 		if ocrResult.Code == 100 {
 			// 识别成功，检查是否包含目标文本（支持多语言）
-			dataArray, ok := ocrResult.Data.([]interface{})
-			if ok {
-				fmt.Printf("第%d次OCR识别成功，正在验证多语言文本 '%s' (支持: %v)...\n", i, test, textVariants)
-				for _, item := range dataArray {
-					itemMap, ok := item.(map[string]interface{})
-					if !ok {
-						continue
+			// 优先使用新的 items 数组格式
+			var itemsToProcess []request.OcrItem
+
+			if len(ocrResult.Items) > 0 {
+				// 使用新格式：items 数组
+				itemsToProcess = ocrResult.Items
+			} else {
+				// 向后兼容：尝试解析 data 为数组
+				dataArray, ok := ocrResult.Data.([]interface{})
+				if ok {
+					// 将旧格式转换为新格式
+					for _, item := range dataArray {
+						itemMap, ok := item.(map[string]interface{})
+						if !ok {
+							continue
+						}
+
+						text, _ := itemMap["text"].(string)
+						confidence, _ := itemMap["confidence"].(float64)
+						boxData, _ := itemMap["box"].([]interface{})
+
+						// 转换 box 坐标
+						var box [][]float64
+						for _, point := range boxData {
+							pointArray, ok := point.([]interface{})
+							if !ok || len(pointArray) < 2 {
+								continue
+							}
+							x, _ := pointArray[0].(float64)
+							y, _ := pointArray[1].(float64)
+							box = append(box, []float64{x, y})
+						}
+
+						// 提取 position（如果有）
+						var position request.OcrPosition
+						if posMap, ok := itemMap["position"].(map[string]interface{}); ok {
+							position.Left, _ = int(posMap["left"].(float64))
+							position.Top, _ = int(posMap["top"].(float64))
+							position.Right, _ = int(posMap["right"].(float64))
+							position.Bottom, _ = int(posMap["bottom"].(float64))
+						}
+
+						itemsToProcess = append(itemsToProcess, request.OcrItem{
+							Text:       text,
+							Confidence: confidence,
+							Box:        box,
+							Position:   position,
+						})
 					}
-					text, _ := itemMap["text"].(string)
+				}
+			}
+
+			if len(itemsToProcess) > 0 {
+				fmt.Printf("第%d次OCR识别成功，正在验证多语言文本 '%s' (支持: %v)...\n", i, test, textVariants)
+				for _, item := range itemsToProcess {
+					text := item.Text
 					textUpper := strings.ToUpper(strings.TrimSpace(text))
 
 					// 检查是否匹配任何语言版本
 					for _, variant := range textVariants {
 						variantUpper := strings.ToUpper(strings.TrimSpace(variant))
 						if strings.Contains(textUpper, variantUpper) || strings.Contains(variantUpper, textUpper) {
-							fmt.Printf("第%d次验证成功: 找到目标文字 '%s' (识别为: '%s')\n", i, test, text)
+							fmt.Printf("第%d次验证成功: 找到目标文字 '%s' (识别为: '%s', 置信度: %.2f)\n", i, test, text, item.Confidence)
 							ocrVerified = true
 							return nil
 						}

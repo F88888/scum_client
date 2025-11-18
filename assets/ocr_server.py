@@ -16,6 +16,7 @@ from io import BytesIO
 from paddleocr import PaddleOCR
 from flask import Flask, request, jsonify
 from PIL import Image
+import numpy as np
 import traceback
 
 # 设置日志
@@ -52,7 +53,11 @@ def check_and_clean_corrupted_models(cache_dir):
         # 遍历缓存目录及其子目录
         for root, dirs, files in os.walk(cache_dir):
             # 跳过无权限的目录
-            dirs[:] = [d for d in dirs if os.access(os.path.join(root, d), os.R_OK)]
+            try:
+                dirs[:] = [d for d in dirs if os.access(os.path.join(root, d), os.R_OK)]
+            except Exception as e:
+                logger.debug(f"遍历目录时出错: {e}")
+                continue
             
             for filename in files:
                 if not (filename.endswith('.tar.gz') or filename.endswith('.tar')):
@@ -62,7 +67,7 @@ def check_and_clean_corrupted_models(cache_dir):
                 
                 # 检查文件是否可访问
                 if not os.access(filepath, os.R_OK):
-                    logger.warning(f"无权限访问文件，跳过: {filepath}")
+                    logger.debug(f"无权限访问文件，跳过: {filepath}")
                     continue
                 
                 # 检查文件大小
@@ -77,7 +82,7 @@ def check_and_clean_corrupted_models(cache_dir):
                             cleaned_count += 1
                             logger.info(f"已删除损坏的模型文件: {filepath}")
                         except Exception as e:
-                            logger.warning(f"无法删除文件 {filepath}: {e}")
+                            logger.debug(f"无法删除文件 {filepath}: {e}")
                         continue
                     
                     # 尝试打开 tar 文件验证完整性
@@ -95,13 +100,13 @@ def check_and_clean_corrupted_models(cache_dir):
                             cleaned_count += 1
                             logger.info(f"已删除损坏的模型文件: {filepath}")
                         except Exception as del_e:
-                            logger.warning(f"无法删除损坏的文件 {filepath}: {del_e}")
+                            logger.debug(f"无法删除损坏的文件 {filepath}: {del_e}")
                         
                 except Exception as e:
-                    logger.warning(f"检查文件时出错 {filepath}: {e}")
+                    logger.debug(f"检查文件时出错 {filepath}: {e}")
                     
     except Exception as e:
-        logger.warning(f"遍历缓存目录时出错: {e}")
+        logger.debug(f"遍历缓存目录时出错: {e}")
     
     if cleaned_count > 0:
         logger.info(f"共清理了 {cleaned_count} 个损坏的模型文件")
@@ -109,6 +114,26 @@ def check_and_clean_corrupted_models(cache_dir):
         logger.info("未发现损坏的模型文件")
     
     return cleaned_count
+
+def get_script_directory():
+    """
+    获取脚本所在目录的绝对路径
+    
+    @description: 获取当前脚本文件的绝对路径，兼容各种运行方式
+    @return: script_dir string 脚本目录的绝对路径
+    """
+    try:
+        if getattr(sys, 'frozen', False):
+            # 如果是打包后的可执行文件
+            script_dir = os.path.dirname(sys.executable)
+        else:
+            # 如果是普通 Python 脚本
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        return script_dir
+    except Exception as e:
+        logger.warning(f"获取脚本目录失败: {e}, 使用当前工作目录")
+        return os.getcwd()
 
 def initialize_paddleocr():
     """
@@ -124,6 +149,10 @@ def initialize_paddleocr():
         
     try:
         logger.info("正在初始化 PaddleOCR...")
+        
+        # 获取脚本目录
+        script_dir = get_script_directory()
+        logger.info(f"脚本目录: {script_dir}")
         
         # 设置模型缓存目录，避免重复下载
         home_dir = os.path.expanduser("~")
@@ -142,16 +171,19 @@ def initialize_paddleocr():
             if cleaned_count > 0:
                 logger.info("已清理损坏的模型文件，将重新下载")
         except Exception as e:
-            logger.warning(f"清理损坏模型文件时出错（继续初始化）: {e}")
+            logger.debug(f"清理损坏模型文件时出错（继续初始化）: {e}")
         
         # 设置环境变量指定模型缓存路径
         os.environ['PADDLEOCR_MODEL_PATH'] = paddle_cache_dir
         os.environ['PADDLEOCR_HOME'] = paddle_cache_dir
         
         # 检查是否存在已下载的自定义模型
+        # 优先使用绝对路径，然后尝试相对于脚本目录的路径
         custom_model_paths = [
-            "paddle_models/en_PP-OCRv4_mobile_rec_infer",  # download_model.py 下载的模型
-            "paddle_models/PP-OCRv5_mobile_det",           # 旧版本路径
+            os.path.join(script_dir, "paddle_models", "en_PP-OCRv4_mobile_rec_infer"),
+            os.path.join(script_dir, "paddle_models", "PP-OCRv5_mobile_det"),
+            os.path.abspath("paddle_models/en_PP-OCRv4_mobile_rec_infer"),
+            os.path.abspath("paddle_models/PP-OCRv5_mobile_det"),
         ]
         
         custom_model_found = False
@@ -160,41 +192,65 @@ def initialize_paddleocr():
         for model_path in custom_model_paths:
             if os.path.exists(model_path) and os.path.isdir(model_path):
                 # 检查目录是否包含模型文件
-                model_files = [f for f in os.listdir(model_path) if f.endswith(('.pdmodel', '.pdiparams'))]
-                if model_files:
-                    custom_model_found = True
-                    custom_model_path = model_path
-                    logger.info(f"找到自定义模型: {model_path}")
-                    break
+                try:
+                    model_files = [f for f in os.listdir(model_path) if f.endswith(('.pdmodel', '.pdiparams'))]
+                    if model_files:
+                        custom_model_found = True
+                        custom_model_path = model_path
+                        logger.info(f"找到自定义模型: {model_path}")
+                        break
+                except Exception as e:
+                    logger.debug(f"检查模型目录时出错 {model_path}: {e}")
         
         # 初始化 PaddleOCR
         logger.info("开始加载 PaddleOCR 模型...")
         
         if custom_model_found:
-            logger.info(f"使用自定义英文识别模型: {custom_model_path}")
+            logger.info(f"使用自定义识别模型: {custom_model_path}")
             try:
                 ocr = PaddleOCR(
                     use_gpu=False,
-                    lang='en',
+                    lang='ch',                      # 中英文混合识别
                     rec_model_dir=custom_model_path,
                     show_log=False,
                     use_angle_cls=False,
                     det=True,
-                    rec=True
+                    rec=True,
+                    # 性能优化参数
+                    use_mp=True,                    # 启用多进程加速
+                    total_process_num=2,            # 进程数量
+                    det_db_thresh=0.3,              # 检测阈值（降低以加快速度）
+                    det_db_box_thresh=0.5,          # 框选阈值
+                    det_db_unclip_ratio=1.6,        # 文本框扩展比例
+                    max_batch_size=10,              # 批处理大小
+                    rec_batch_num=6                 # 识别批处理数量
                 )
             except Exception as e:
                 logger.warning(f"加载自定义模型失败: {e}，将使用默认模型")
                 custom_model_found = False
         
         if not custom_model_found:
-            logger.info("使用默认英文模型（首次使用将自动下载）")
+            logger.info("使用默认中英文混合识别模型（mobile版本，首次使用将自动下载）")
             ocr = PaddleOCR(
                 use_gpu=False,
-                lang='en',
+                lang='ch',                      # 中英文混合识别（支持中文、英文、数字）
                 show_log=False,
-                use_angle_cls=False,  # 禁用角度分类，加快识别速度
-                det=True,              # 启用文字检测
-                rec=True               # 启用文字识别
+                use_angle_cls=False,            # 禁用角度分类，加快识别速度
+                det=True,                       # 启用文字检测
+                rec=True,                       # 启用文字识别
+                # 性能优化参数
+                use_mp=True,                    # 启用多进程加速
+                total_process_num=2,            # 进程数量（避免过多占用资源）
+                det_db_thresh=0.3,              # 降低检测阈值，加快速度
+                det_db_box_thresh=0.5,          # 框选阈值
+                det_db_unclip_ratio=1.6,        # 文本框扩展比例
+                max_batch_size=10,              # 批处理大小
+                rec_batch_num=6,                # 识别批处理数量
+                # 使用轻量级模型
+                det_model_dir=None,             # 使用默认检测模型
+                rec_model_dir=None,             # 使用默认识别模型
+                use_dilation=False,             # 禁用膨胀，加快速度
+                det_db_score_mode='fast'        # 使用快速评分模式
             )
         
         ocr_initialized = True
@@ -208,7 +264,7 @@ def initialize_paddleocr():
         # 如果初始化失败，尝试清理所有模型缓存
         try:
             logger.warning("初始化失败，尝试清理所有模型缓存...")
-            if os.path.exists(paddle_cache_dir):
+            if 'paddle_cache_dir' in locals() and os.path.exists(paddle_cache_dir):
                 # 只清理 whl 目录下的模型文件
                 whl_dir = os.path.join(paddle_cache_dir, "whl")
                 if os.path.exists(whl_dir):
@@ -220,25 +276,79 @@ def initialize_paddleocr():
         
         return False
 
+def preprocess_image(img, max_size=1920):
+    """
+    预处理图片以提高 OCR 性能
+    
+    @description: 调整图片大小，优化OCR识别速度
+    @param: img Image PIL图片对象
+    @param: max_size int 最大边长（像素）
+    @return: img_array ndarray 处理后的numpy数组
+    """
+    # 获取原始尺寸
+    width, height = img.size
+    
+    # 如果图片过大，进行缩放
+    if max(width, height) > max_size:
+        # 计算缩放比例
+        if width > height:
+            new_width = max_size
+            new_height = int(height * (max_size / width))
+        else:
+            new_height = max_size
+            new_width = int(width * (max_size / height))
+        
+        # 使用快速缩放（BILINEAR比LANCZOS更快，且对OCR足够用）
+        img = img.resize((new_width, new_height), Image.BILINEAR)
+        logger.info(f"图片已缩放: {width}x{height} -> {new_width}x{new_height}")
+    
+    # 转换为 numpy 数组
+    img_array = np.array(img)
+    
+    return img_array
+
 def process_ocr_result(result, target_text=None):
     """
     处理 OCR 识别结果
     
-    @description: 提取OCR识别结果中的文字，可选检查是否包含目标文字
+    @description: 提取OCR识别结果中的文字和坐标，可选检查是否包含目标文字
     @param: result list OCR识别结果
     @param: target_text string 目标文字（可选）
     @return: response dict 处理后的响应数据
     """
     if not result:
-        return {"code": 200, "data": "", "message": "没有识别到文字"}
+        return {
+            "code": 200, 
+            "data": "", 
+            "items": [],
+            "message": "没有识别到文字"
+        }
     
-    # 提取所有文字
+    # 提取所有文字和坐标
     texts = []
+    items = []
+    
     for line in result:
         if len(line) >= 2:
+            # line[0] 是坐标信息（四个顶点）
+            # line[1] 是 [文字内容, 置信度]
+            coordinates = line[0]  # [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
             text = line[1][0].strip()
+            confidence = line[1][1]
+            
             if text:
                 texts.append(text)
+                items.append({
+                    "text": text,
+                    "confidence": float(confidence),
+                    "box": coordinates,  # 文字框的四个顶点坐标
+                    "position": {
+                        "left": int(min(coord[0] for coord in coordinates)),
+                        "top": int(min(coord[1] for coord in coordinates)),
+                        "right": int(max(coord[0] for coord in coordinates)),
+                        "bottom": int(max(coord[1] for coord in coordinates))
+                    }
+                })
     
     # 合并所有文字
     full_text = " ".join(texts).strip()
@@ -250,11 +360,27 @@ def process_ocr_result(result, target_text=None):
         clean_target_text = target_text.replace(" ", "").lower()
         
         if clean_target_text in clean_full_text:
-            return {"code": 100, "data": target_text, "message": "识别成功"}
+            return {
+                "code": 100, 
+                "data": target_text, 
+                "items": items,
+                "full_text": full_text,
+                "message": "识别成功"
+            }
         else:
-            return {"code": 200, "data": full_text, "message": "未找到目标文字"}
+            return {
+                "code": 200, 
+                "data": full_text, 
+                "items": items,
+                "message": "未找到目标文字"
+            }
     
-    return {"code": 100, "data": full_text, "message": "识别成功"}
+    return {
+        "code": 100, 
+        "data": full_text, 
+        "items": items,
+        "message": "识别成功"
+    }
 
 @app.route('/api/ocr', methods=['POST'])
 def ocr_recognition():
@@ -262,62 +388,88 @@ def ocr_recognition():
     OCR 识别接口
     
     @Tags OCR
-    @Summary OCR文字识别
-    @Description 接收Base64编码的图片，返回识别的文字内容
+    @Summary OCR文字识别（含坐标）
+    @Description 接收Base64编码的图片，返回识别的文字内容、坐标和置信度
     @Accept application/json
     @Produce application/json
-    @Success 200 {object} response.Response{data=string} "识别成功"
+    @Success 200 {object} response.Response{data=string,items=array} "识别成功，返回文字、坐标、置信度"
     @Failure 400 {object} response.Response "请求错误"
     @Failure 500 {object} response.Response "服务器错误"
     @Router /api/ocr [post]
+    
+    返回数据格式：
+    {
+        "code": 100,
+        "data": "合并的完整文字",
+        "items": [
+            {
+                "text": "识别的文字",
+                "confidence": 0.98,
+                "box": [[x1,y1], [x2,y2], [x3,y3], [x4,y4]],  // 四个顶点坐标
+                "position": {
+                    "left": x1,
+                    "top": y1,
+                    "right": x2,
+                    "bottom": y2
+                }
+            }
+        ],
+        "message": "识别成功"
+    }
     """
     global ocr
     
+    # 检查 OCR 是否已初始化
+    if not ocr_initialized:
+        if not initialize_paddleocr():
+            return jsonify({"code": 500, "data": "", "message": "OCR 服务初始化失败，请查看日志"})
+
+    # 获取请求数据
+    data = request.get_json()
+    if not data or 'image' not in data:
+        return jsonify({"code": 400, "data": "", "message": "缺少 Base64 图片数据"})
+
+    # 解码 Base64 图片
+    base64_str = data['image']
     try:
-        # 检查 OCR 是否已初始化
-        if not ocr_initialized:
-            if not initialize_paddleocr():
-                return jsonify({"code": 500, "data": "", "message": "OCR 服务初始化失败，请查看日志"})
-        
-        # 获取请求数据
-        data = request.get_json()
-        if not data or 'image' not in data:
-            return jsonify({"code": 400, "data": "", "message": "缺少 Base64 图片数据"})
-        
-        # 解码 Base64 图片
-        base64_str = data['image']
-        try:
-            img_data = base64.b64decode(base64_str)
-            img = Image.open(BytesIO(img_data))
-            
-            # 转换为 RGB 模式（如果需要）
-            if img.mode != 'RGB':
-                img = img.convert('RGB')
-                
-        except Exception as e:
-            logger.error(f"图片解码失败: {e}")
-            return jsonify({"code": 400, "data": "", "message": "图片格式错误"})
-        
-        # 获取目标文字（如果有）
-        target_text = data.get('target_text', None)
-        
-        # 执行 OCR 识别
+        img_data = base64.b64decode(base64_str)
+        img = Image.open(BytesIO(img_data))
+
+        # 转换为 RGB 模式（如果需要）
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+
+    except Exception as e:
+        logger.error(f"图片解码失败: {e}")
+        return jsonify({"code": 400, "data": "", "message": "图片格式错误"})
+
+    # 获取目标文字（如果有）
+    target_text = data.get('target_text', None)
+
+    # 执行 OCR 识别
+    try:
         logger.info("开始执行 OCR 识别...")
-        result = ocr.ocr(img)
         
+        # 预处理图片（缩放 + 转换为 numpy 数组）
+        img_array = preprocess_image(img, max_size=1920)
+        
+        # 执行 OCR 识别（使用 cls=False 加快速度）
+        result = ocr.ocr(img_array, cls=False)
+
         # 处理识别结果
         if result and len(result) > 0:
             response = process_ocr_result(result[0], target_text)
-            logger.info(f"OCR 识别完成: {response['message']}, 识别文字: {response['data']}")
+            item_count = len(response.get('items', []))
+            logger.info(f"OCR 识别完成: {response['message']}, 识别到 {item_count} 个文本块, 完整文字: {response['data']}")
         else:
-            response = {"code": 200, "data": "", "message": "没有识别到文字"}
-            
+            response = {"code": 200, "data": "", "items": [], "message": "没有识别到文字"}
+
         return jsonify(response)
         
     except Exception as e:
-        logger.error(f"OCR 识别过程中发生错误: {e}")
-        logger.error(traceback.format_exc())
-        return jsonify({"code": 500, "data": "", "message": f"服务器内部错误: {str(e)}"})
+        logger.error(f"OCR 识别失败: {e}")
+        logger.error(f"错误详情:\n{traceback.format_exc()}")
+        return jsonify({"code": 500, "data": "", "message": f"OCR 识别失败: {str(e)}"})
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -350,21 +502,50 @@ def index():
     """
     return jsonify({
         "service": "PaddleOCR HTTP API",
-        "version": "1.0.2",
+        "version": "1.3.0",
+        "language": "中英文混合识别",
+        "supported_languages": ["中文", "英文", "数字", "标点符号"],
+        "features": [
+            "文字识别",
+            "坐标定位",
+            "置信度评分",
+            "多文本块识别"
+        ],
+        "optimizations": [
+            "多进程加速",
+            "图片自动缩放",
+            "轻量级模型",
+            "快速检测模式"
+        ],
         "status": "ready" if ocr_initialized else "initializing",
         "endpoints": {
-            "POST /api/ocr": "OCR 文字识别",
+            "POST /api/ocr": "OCR 文字识别（含坐标、置信度）",
             "GET /health": "健康检查",
             "GET /": "服务信息"
+        },
+        "response_format": {
+            "data": "合并的完整文字",
+            "items": [
+                {
+                    "text": "识别的文字",
+                    "confidence": "置信度(0-1)",
+                    "box": "四个顶点坐标",
+                    "position": "矩形边界框(left,top,right,bottom)"
+                }
+            ]
         }
     })
 
 if __name__ == '__main__':
-    # 设置工作目录为脚本所在目录
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    if script_dir:
-        os.chdir(script_dir)
-        logger.info(f"工作目录设置为: {script_dir}")
+    # 获取并设置工作目录为脚本所在目录
+    try:
+        script_dir = get_script_directory()
+        if script_dir:
+            os.chdir(script_dir)
+            logger.info(f"工作目录已设置为: {script_dir}")
+    except Exception as e:
+        logger.warning(f"无法设置工作目录: {e}")
+        logger.info(f"当前工作目录: {os.getcwd()}")
     
     logger.info("="*60)
     logger.info("启动 PaddleOCR HTTP 服务...")
