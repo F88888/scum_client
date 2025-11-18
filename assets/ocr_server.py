@@ -43,15 +43,27 @@ def check_and_clean_corrupted_models(cache_dir):
     cleaned_count = 0
     
     if not os.path.exists(cache_dir):
+        logger.info(f"模型缓存目录不存在: {cache_dir}")
         return cleaned_count
     
     logger.info(f"正在检查模型缓存目录: {cache_dir}")
     
-    # 遍历缓存目录及其子目录
-    for root, dirs, files in os.walk(cache_dir):
-        for filename in files:
-            if filename.endswith('.tar.gz') or filename.endswith('.tar'):
+    try:
+        # 遍历缓存目录及其子目录
+        for root, dirs, files in os.walk(cache_dir):
+            # 跳过无权限的目录
+            dirs[:] = [d for d in dirs if os.access(os.path.join(root, d), os.R_OK)]
+            
+            for filename in files:
+                if not (filename.endswith('.tar.gz') or filename.endswith('.tar')):
+                    continue
+                    
                 filepath = os.path.join(root, filename)
+                
+                # 检查文件是否可访问
+                if not os.access(filepath, os.R_OK):
+                    logger.warning(f"无权限访问文件，跳过: {filepath}")
+                    continue
                 
                 # 检查文件大小
                 try:
@@ -60,9 +72,12 @@ def check_and_clean_corrupted_models(cache_dir):
                     # 如果文件太小（< 100KB），可能是下载不完整
                     if file_size < 100 * 1024:
                         logger.warning(f"发现可疑的模型文件（文件过小）: {filepath} ({file_size} bytes)")
-                        os.remove(filepath)
-                        cleaned_count += 1
-                        logger.info(f"已删除损坏的模型文件: {filepath}")
+                        try:
+                            os.remove(filepath)
+                            cleaned_count += 1
+                            logger.info(f"已删除损坏的模型文件: {filepath}")
+                        except Exception as e:
+                            logger.warning(f"无法删除文件 {filepath}: {e}")
                         continue
                     
                     # 尝试打开 tar 文件验证完整性
@@ -75,12 +90,18 @@ def check_and_clean_corrupted_models(cache_dir):
                         logger.debug(f"模型文件完整性验证通过: {filepath}")
                     except Exception as e:
                         logger.warning(f"发现损坏的模型文件: {filepath}, 错误: {e}")
-                        os.remove(filepath)
-                        cleaned_count += 1
-                        logger.info(f"已删除损坏的模型文件: {filepath}")
+                        try:
+                            os.remove(filepath)
+                            cleaned_count += 1
+                            logger.info(f"已删除损坏的模型文件: {filepath}")
+                        except Exception as del_e:
+                            logger.warning(f"无法删除损坏的文件 {filepath}: {del_e}")
                         
                 except Exception as e:
-                    logger.error(f"检查文件时出错 {filepath}: {e}")
+                    logger.warning(f"检查文件时出错 {filepath}: {e}")
+                    
+    except Exception as e:
+        logger.warning(f"遍历缓存目录时出错: {e}")
     
     if cleaned_count > 0:
         logger.info(f"共清理了 {cleaned_count} 个损坏的模型文件")
@@ -109,8 +130,11 @@ def initialize_paddleocr():
         paddle_cache_dir = os.path.join(home_dir, ".paddleocr")
         
         # 确保缓存目录存在
-        os.makedirs(paddle_cache_dir, exist_ok=True)
-        logger.info(f"PaddleOCR 模型缓存目录: {paddle_cache_dir}")
+        try:
+            os.makedirs(paddle_cache_dir, exist_ok=True)
+            logger.info(f"PaddleOCR 模型缓存目录: {paddle_cache_dir}")
+        except Exception as e:
+            logger.warning(f"无法创建缓存目录 {paddle_cache_dir}: {e}")
         
         # 检查并清理损坏的模型文件
         try:
@@ -134,24 +158,35 @@ def initialize_paddleocr():
         custom_model_path = None
         
         for model_path in custom_model_paths:
-            if os.path.exists(model_path):
-                custom_model_found = True
-                custom_model_path = model_path
-                logger.info(f"找到自定义模型: {model_path}")
-                break
+            if os.path.exists(model_path) and os.path.isdir(model_path):
+                # 检查目录是否包含模型文件
+                model_files = [f for f in os.listdir(model_path) if f.endswith(('.pdmodel', '.pdiparams'))]
+                if model_files:
+                    custom_model_found = True
+                    custom_model_path = model_path
+                    logger.info(f"找到自定义模型: {model_path}")
+                    break
         
         # 初始化 PaddleOCR
         logger.info("开始加载 PaddleOCR 模型...")
         
         if custom_model_found:
             logger.info(f"使用自定义英文识别模型: {custom_model_path}")
-            ocr = PaddleOCR(
-                use_gpu=False,
-                lang='en',
-                rec_model_dir=custom_model_path,
-                show_log=False
-            )
-        else:
+            try:
+                ocr = PaddleOCR(
+                    use_gpu=False,
+                    lang='en',
+                    rec_model_dir=custom_model_path,
+                    show_log=False,
+                    use_angle_cls=False,
+                    det=True,
+                    rec=True
+                )
+            except Exception as e:
+                logger.warning(f"加载自定义模型失败: {e}，将使用默认模型")
+                custom_model_found = False
+        
+        if not custom_model_found:
             logger.info("使用默认英文模型（首次使用将自动下载）")
             ocr = PaddleOCR(
                 use_gpu=False,
@@ -315,7 +350,7 @@ def index():
     """
     return jsonify({
         "service": "PaddleOCR HTTP API",
-        "version": "1.0.1",
+        "version": "1.0.2",
         "status": "ready" if ocr_initialized else "initializing",
         "endpoints": {
             "POST /api/ocr": "OCR 文字识别",
@@ -325,6 +360,12 @@ def index():
     })
 
 if __name__ == '__main__':
+    # 设置工作目录为脚本所在目录
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    if script_dir:
+        os.chdir(script_dir)
+        logger.info(f"工作目录设置为: {script_dir}")
+    
     logger.info("="*60)
     logger.info("启动 PaddleOCR HTTP 服务...")
     logger.info("="*60)
