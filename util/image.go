@@ -703,10 +703,10 @@ func ClickTextCenter(hand syscall.Handle, text string) error {
 	fmt.Printf("点击文本 '%s': 计算中心坐标 (%d, %d) (文本区域: [%d,%d,%d,%d])\n",
 		text, centerX, centerY, cache.X1, cache.Y1, cache.X2, cache.Y2)
 
-	// 使用句柄发送鼠标点击消息
-	fmt.Printf("点击文本 '%s': 正在通过句柄点击坐标 (%d, %d)...\n", text, centerX, centerY)
-	if !SendMouseClickToWindow(hand, centerX, centerY) {
-		return fmt.Errorf("发送鼠标点击消息失败")
+	// 使用硬件级别的点击（适用于游戏窗口）
+	fmt.Printf("点击文本 '%s': 正在通过硬件级别点击坐标 (%d, %d)...\n", text, centerX, centerY)
+	if err := ClickWindowPosition(hand, centerX, centerY); err != nil {
+		return fmt.Errorf("硬件级别点击失败: %v", err)
 	}
 
 	fmt.Printf("点击文本 '%s': 点击成功\n", text)
