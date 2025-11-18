@@ -526,10 +526,18 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 						// 提取 position（如果有）
 						var position request.OcrPosition
 						if posMap, ok := itemMap["position"].(map[string]interface{}); ok {
-							position.Left, _ = int(posMap["left"].(float64))
-							position.Top, _ = int(posMap["top"].(float64))
-							position.Right, _ = int(posMap["right"].(float64))
-							position.Bottom, _ = int(posMap["bottom"].(float64))
+							if left, ok := posMap["left"].(float64); ok {
+								position.Left = int(left)
+							}
+							if top, ok := posMap["top"].(float64); ok {
+								position.Top = int(top)
+							}
+							if right, ok := posMap["right"].(float64); ok {
+								position.Right = int(right)
+							}
+							if bottom, ok := posMap["bottom"].(float64); ok {
+								position.Bottom = int(bottom)
+							}
 						}
 
 						itemsToProcess = append(itemsToProcess, request.OcrItem{
