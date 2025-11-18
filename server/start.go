@@ -155,7 +155,7 @@ func Start() {
 	setWindowPositionOnce(hand)
 
 	// 设置游戏窗口置顶 - 已注释：使用句柄操作不需要窗口置顶
-	// util.SetForegroundWindow(hand)
+	util.SetForegroundWindow(hand)
 	// time.Sleep(200 * time.Millisecond)
 
 	// 获取当前游戏状态

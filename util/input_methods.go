@@ -2,12 +2,11 @@ package util
 
 import (
 	"fmt"
+	"github.com/atotto/clipboard"
+	_const "qq_client/internal/const"
 	"syscall"
 	"time"
 	"unsafe"
-
-	"github.com/atotto/clipboard"
-	_const "qq_client/internal/const"
 )
 
 var (

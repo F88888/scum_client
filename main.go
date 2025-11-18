@@ -76,7 +76,6 @@ func main() {
 
 		// 加载配置文件
 		var configData []byte
-		var err error
 
 		// 首先尝试从嵌入文件加载
 		if configData, err = File.ReadFile("config.yaml"); err != nil {
@@ -99,13 +98,8 @@ func main() {
 			return
 		}
 
-		fmt.Printf("配置加载成功 - ServerID: %d, ServerUrl: %s\n", global.ScumConfig.ServerID, global.ScumConfig.ServerUrl)
-
-		// 创建客户端
-		client := client.New(&global.ScumConfig)
-
 		// 启动客户端
-		if err := client.Start(); err != nil {
+		if err = client.New(&global.ScumConfig).Start(); err != nil {
 			fmt.Printf("客户端启动失败: %v\n", err)
 			return
 		}
