@@ -234,8 +234,8 @@ func captureWindowImageInternal(hwnd syscall.Handle, isMinimized bool) (*image.R
 
 // ScreenshotGrayscale
 // @author: [Fantasia](https://www.npc0.com)
-// @function: 截屏取灰度图片
-// @description: 截取指定窗口句柄的图像并转换为灰度图
+// @function: 截屏取图片
+// @description: 截取指定窗口句柄的图像（彩色图片，不再转换为灰度）
 // @param: hand syscall.Handle 窗口句柄, x1, y1, x2, y2 int 裁剪区域坐标(可选，传0表示整个窗口)
 // @return: string, error
 func ScreenshotGrayscale(hand syscall.Handle, x1, y1, x2, y2 int) (string, error) {
@@ -278,24 +278,27 @@ func ScreenshotGrayscale(hand syscall.Handle, x1, y1, x2, y2 int) (string, error
 		finalImg = croppedImg
 	}
 
-	// 将图像转换为灰度图像
-	grayImg := image.NewGray(finalImg.Bounds())
-	for y := finalImg.Bounds().Min.Y; y < finalImg.Bounds().Max.Y; y++ {
-		for x := finalImg.Bounds().Min.X; x < finalImg.Bounds().Max.X; x++ {
-			pixel := finalImg.At(x, y)
-			gray := color.GrayModel.Convert(pixel).(color.Gray)
-			grayImg.Set(x, y, gray)
-		}
-	}
-
-	// 保存灰度图像
+	// 保存彩色图像（captureWindowImage返回的本来就是RGBA彩色图片）
 	if f, err = os.Create(filePath); err != nil {
 		return "", errors.New("创建图片文件失败:" + err.Error())
 	}
 	defer f.Close()
 
-	if err = png.Encode(f, grayImg); err != nil {
-		return "", errors.New("保存灰度图像失败:" + err.Error())
+	// 直接保存RGBA图片（已经是彩色格式）
+	rgbaImg, ok := finalImg.(*image.RGBA)
+	if !ok {
+		// 如果不是RGBA格式，转换为RGBA（通常不会发生，因为captureWindowImage返回的就是RGBA）
+		bounds := finalImg.Bounds()
+		rgbaImg = image.NewRGBA(bounds)
+		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				rgbaImg.Set(x, y, finalImg.At(x, y))
+			}
+		}
+	}
+
+	if err = png.Encode(f, rgbaImg); err != nil {
+		return "", errors.New("保存图片失败:" + err.Error())
 	}
 
 	// 返回文件路径
