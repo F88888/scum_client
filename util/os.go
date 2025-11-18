@@ -8,9 +8,10 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"os"
 	"os/exec"
-	"path"
+	"path/filepath"
 	_const "qq_client/internal/const"
 	"strings"
 	"syscall"
@@ -237,11 +238,13 @@ func captureWindowImageInternal(hwnd syscall.Handle, isMinimized bool) (*image.R
 // @function: 截屏取图片
 // @description: 截取指定窗口句柄的图像（彩色图片，不再转换为灰度）
 // @param: hand syscall.Handle 窗口句柄, x1, y1, x2, y2 int 裁剪区域坐标(可选，传0表示整个窗口)
+// @param: enhance bool 是否启用图像增强（用于提高OCR识别准确率）
 // @return: string, error
-func ScreenshotGrayscale(hand syscall.Handle, x1, y1, x2, y2 int) (string, error) {
-	// 生成文件地址
+func ScreenshotGrayscale(hand syscall.Handle, x1, y1, x2, y2 int, enhance ...bool) (string, error) {
+	// 生成文件地址，使用系统临时目录
 	var f *os.File
-	var filePath = path.Join("D:/", uuid.New().String()+".png")
+	tempDir := os.TempDir()
+	filePath := filepath.Join(tempDir, uuid.New().String()+".png")
 
 	// 截取窗口图像
 	img, err := captureWindowImage(hand)
@@ -297,12 +300,274 @@ func ScreenshotGrayscale(hand syscall.Handle, x1, y1, x2, y2 int) (string, error
 		}
 	}
 
+	// 如果启用增强，对图像进行增强处理
+	shouldEnhance := false
+	if len(enhance) > 0 && enhance[0] {
+		shouldEnhance = true
+	}
+
+	if shouldEnhance {
+		// 使用2.5倍放大，平衡识别准确率和处理速度
+		rgbaImg = enhanceImageForOCR(rgbaImg, 2.5)
+	}
+
 	if err = png.Encode(f, rgbaImg); err != nil {
 		return "", errors.New("保存图片失败:" + err.Error())
 	}
 
 	// 返回文件路径
 	return filePath, nil
+}
+
+// enhanceImageForOCR 增强图像以提高OCR识别准确率
+// @description: 对图像进行放大、锐化和对比度增强，提高小且模糊文字的识别准确率
+// @param: img *image.RGBA 原始图像
+// @param: scaleFactor float64 放大倍数（建议2.0-3.0）
+// @return: *image.RGBA 增强后的图像
+func enhanceImageForOCR(img *image.RGBA, scaleFactor float64) *image.RGBA {
+	// 1. 放大图像
+	enhanced := resizeImage(img, scaleFactor)
+
+	// 2. 锐化处理
+	enhanced = sharpenImage(enhanced)
+
+	// 3. 对比度增强
+	enhanced = enhanceContrast(enhanced)
+
+	return enhanced
+}
+
+// resizeImage 使用双三次插值放大图像
+// @description: 将图像放大指定倍数，使用双三次插值保持图像质量
+// @param: img *image.RGBA 原始图像
+// @param: scale float64 放大倍数
+// @return: *image.RGBA 放大后的图像
+func resizeImage(img *image.RGBA, scale float64) *image.RGBA {
+	bounds := img.Bounds()
+	oldWidth := bounds.Dx()
+	oldHeight := bounds.Dy()
+	newWidth := int(float64(oldWidth) * scale)
+	newHeight := int(float64(oldHeight) * scale)
+
+	resized := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
+
+	// 双三次插值
+	for y := 0; y < newHeight; y++ {
+		for x := 0; x < newWidth; x++ {
+			// 计算原始图像中的对应位置
+			srcX := float64(x) / scale
+			srcY := float64(y) / scale
+
+			// 获取周围4x4像素进行双三次插值
+			var r, g, b, a float64
+			var weightSum float64
+
+			for dy := -1; dy <= 2; dy++ {
+				for dx := -1; dx <= 2; dx++ {
+					px := int(srcX) + dx
+					py := int(srcY) + dy
+
+					// 边界检查
+					if px < 0 {
+						px = 0
+					}
+					if px >= oldWidth {
+						px = oldWidth - 1
+					}
+					if py < 0 {
+						py = 0
+					}
+					if py >= oldHeight {
+						py = oldHeight - 1
+					}
+
+					// 计算权重（双三次插值核函数）
+					wx := cubicWeight(srcX - float64(px))
+					wy := cubicWeight(srcY - float64(py))
+					weight := wx * wy
+
+					c := img.RGBAAt(px, py)
+					r += float64(c.R) * weight
+					g += float64(c.G) * weight
+					b += float64(c.B) * weight
+					a += float64(c.A) * weight
+					weightSum += weight
+				}
+			}
+
+			// 归一化
+			if weightSum > 0 {
+				r /= weightSum
+				g /= weightSum
+				b /= weightSum
+				a /= weightSum
+			}
+
+			resized.SetRGBA(x, y, color.RGBA{
+				R: uint8(math.Max(0, math.Min(255, r))),
+				G: uint8(math.Max(0, math.Min(255, g))),
+				B: uint8(math.Max(0, math.Min(255, b))),
+				A: uint8(math.Max(0, math.Min(255, a))),
+			})
+		}
+	}
+
+	return resized
+}
+
+// cubicWeight 双三次插值权重函数
+// @description: 计算双三次插值的权重
+// @param: t float64 距离
+// @return: float64 权重
+func cubicWeight(t float64) float64 {
+	t = math.Abs(t)
+	if t <= 1 {
+		return 1.5*t*t*t - 2.5*t*t + 1
+	} else if t <= 2 {
+		return -0.5*t*t*t + 2.5*t*t - 4*t + 2
+	}
+	return 0
+}
+
+// sharpenImage 锐化图像
+// @description: 使用拉普拉斯算子对图像进行锐化处理
+// @param: img *image.RGBA 原始图像
+// @return: *image.RGBA 锐化后的图像
+func sharpenImage(img *image.RGBA) *image.RGBA {
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	sharpened := image.NewRGBA(bounds)
+
+	// 拉普拉斯锐化核
+	// [ 0 -1  0]
+	// [-1  5 -1]
+	// [ 0 -1  0]
+
+	for y := 1; y < height-1; y++ {
+		for x := 1; x < width-1; x++ {
+			// 获取周围像素
+			c00 := img.RGBAAt(x-1, y-1)
+			c01 := img.RGBAAt(x, y-1)
+			c02 := img.RGBAAt(x+1, y-1)
+			c10 := img.RGBAAt(x-1, y)
+			c11 := img.RGBAAt(x, y) // 中心像素
+			c12 := img.RGBAAt(x+1, y)
+			c20 := img.RGBAAt(x-1, y+1)
+			c21 := img.RGBAAt(x, y+1)
+			c22 := img.RGBAAt(x+1, y+1)
+
+			// 应用锐化核
+			r := float64(c11.R)*5 - float64(c01.R+c10.R+c12.R+c21.R)
+			g := float64(c11.G)*5 - float64(c01.G+c10.G+c12.G+c21.G)
+			b := float64(c11.B)*5 - float64(c01.B+c10.B+c12.B+c21.B)
+			a := c11.A
+
+			// 限制范围
+			r = math.Max(0, math.Min(255, r))
+			g = math.Max(0, math.Min(255, g))
+			b = math.Max(0, math.Min(255, b))
+
+			sharpened.SetRGBA(x, y, color.RGBA{
+				R: uint8(r),
+				G: uint8(g),
+				B: uint8(b),
+				A: a,
+			})
+		}
+	}
+
+	// 复制边界像素
+	for y := 0; y < height; y++ {
+		sharpened.SetRGBA(0, y, img.RGBAAt(0, y))
+		sharpened.SetRGBA(width-1, y, img.RGBAAt(width-1, y))
+	}
+	for x := 0; x < width; x++ {
+		sharpened.SetRGBA(x, 0, img.RGBAAt(x, 0))
+		sharpened.SetRGBA(x, height-1, img.RGBAAt(x, height-1))
+	}
+
+	return sharpened
+}
+
+// enhanceContrast 增强对比度
+// @description: 使用对比度拉伸增强图像对比度
+// @param: img *image.RGBA 原始图像
+// @return: *image.RGBA 增强后的图像
+func enhanceContrast(img *image.RGBA) *image.RGBA {
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	enhanced := image.NewRGBA(bounds)
+
+	// 计算最小和最大亮度值
+	minBrightness := 255.0
+	maxBrightness := 0.0
+
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			c := img.RGBAAt(x, y)
+			brightness := 0.299*float64(c.R) + 0.587*float64(c.G) + 0.114*float64(c.B)
+			if brightness < minBrightness {
+				minBrightness = brightness
+			}
+			if brightness > maxBrightness {
+				maxBrightness = brightness
+			}
+		}
+	}
+
+	// 如果对比度已经很高，不进行增强
+	if maxBrightness-minBrightness < 50 {
+		return img
+	}
+
+	// 对比度拉伸
+	range_ := maxBrightness - minBrightness
+	if range_ == 0 {
+		return img
+	}
+
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			c := img.RGBAAt(x, y)
+			brightness := 0.299*float64(c.R) + 0.587*float64(c.G) + 0.114*float64(c.B)
+
+			// 归一化到0-1范围
+			normalized := (brightness - minBrightness) / range_
+
+			// 拉伸到0-255范围，并应用轻微的S曲线增强
+			enhancedBrightness := normalized * 255
+			enhancedBrightness = math.Pow(enhancedBrightness/255, 0.9) * 255 // S曲线
+
+			// 计算增强因子
+			factor := enhancedBrightness / brightness
+			if brightness == 0 {
+				factor = 1.0
+			}
+
+			// 应用增强
+			r := float64(c.R) * factor
+			g := float64(c.G) * factor
+			b := float64(c.B) * factor
+
+			// 限制范围
+			r = math.Max(0, math.Min(255, r))
+			g = math.Max(0, math.Min(255, g))
+			b = math.Max(0, math.Min(255, b))
+
+			enhanced.SetRGBA(x, y, color.RGBA{
+				R: uint8(r),
+				G: uint8(g),
+				B: uint8(b),
+				A: c.A,
+			})
+		}
+	}
+
+	return enhanced
 }
 
 // SpecifiedCoordinateColor
