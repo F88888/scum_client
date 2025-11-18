@@ -70,6 +70,15 @@ const (
 	MOUSEEVENTF_ABSOLUTE   = 0x8000
 )
 
+// 坐标偏移修正常量（用于修正点击位置偏移问题）
+const (
+	// ClickOffsetX X轴偏移量（负数向左，正数向右）
+	ClickOffsetX = 0
+	// ClickOffsetY Y轴偏移量（负数向上，正数向下）
+	// 如果点击位置在目标下方，使用负数向上移动；如果在目标上方，使用正数向下移动
+	ClickOffsetY = -30 // 默认向上偏移30像素
+)
+
 // FindWindow
 // @author: [Fantasia](https://www.npc0.com)
 // @function: FindWindow
@@ -391,7 +400,17 @@ func SetFocus(hwnd syscall.Handle) bool {
 // @param: hwnd syscall.Handle 窗口句柄, x, y int 窗口内坐标
 // @return: error
 func ClickWindowPosition(hwnd syscall.Handle, x, y int) error {
-	fmt.Printf("[DEBUG] 开始点击流程 - 窗口内坐标: (%d, %d)\n", x, y)
+	// 应用坐标偏移修正
+	originalX, originalY := x, y
+	x = x + ClickOffsetX
+	y = y + ClickOffsetY
+
+	if ClickOffsetX != 0 || ClickOffsetY != 0 {
+		fmt.Printf("[DEBUG] 坐标偏移修正 - 原始: (%d, %d), 偏移: (%d, %d), 修正后: (%d, %d)\n",
+			originalX, originalY, ClickOffsetX, ClickOffsetY, x, y)
+	} else {
+		fmt.Printf("[DEBUG] 开始点击流程 - 坐标: (%d, %d)\n", x, y)
+	}
 
 	// 1. 确保窗口可见且未最小化
 	if IsIconic(hwnd) {
