@@ -124,9 +124,9 @@ func (eim *EnhancedInputManager) ActivateChat(method ChatActivationMethod) error
 	start := time.Now()
 	var err error
 
-	// 设置窗口为前台
-	SetForegroundWindow(eim.hwnd)
-	time.Sleep(100 * time.Millisecond)
+	// 设置窗口为前台 - 已注释：使用句柄操作不需要窗口置顶
+	// SetForegroundWindow(eim.hwnd)
+	// time.Sleep(100 * time.Millisecond)
 
 	switch method {
 	case CHAT_ACTIVATE_T_KEY:

@@ -78,9 +78,9 @@ func captureWindowImage(hwnd syscall.Handle) (*image.RGBA, error) {
 			ShowWindow(hwnd, 5)
 			time.Sleep(50 * time.Millisecond)
 		}
-		// 尝试将窗口置于前台（可选，不影响截图）
-		SetForegroundWindow(hwnd)
-		BringWindowToTop(hwnd)
+		// 尝试将窗口置于前台（可选，不影响截图） - 已注释：使用句柄操作不需要窗口置顶
+		// SetForegroundWindow(hwnd)
+		// BringWindowToTop(hwnd)
 		// 等待窗口内容渲染
 		time.Sleep(100 * time.Millisecond)
 	}

@@ -138,9 +138,9 @@ func getCurrentChatMode(hand syscall.Handle) string {
 func ensureChatBoxActive(hand syscall.Handle) bool {
 	logDebug("开始检查聊天框状态")
 
-	// 设置窗口为前台
-	util.SetForegroundWindow(hand)
-	time.Sleep(200 * time.Millisecond)
+	// 设置窗口为前台 - 已注释：使用句柄操作不需要窗口置顶
+	// util.SetForegroundWindow(hand)
+	// time.Sleep(200 * time.Millisecond)
 
 	// 首先检查是否已经在聊天界面
 	if !isChatInterfaceOpen(hand) {

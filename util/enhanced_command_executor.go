@@ -160,9 +160,9 @@ func (ece *EnhancedCommandExecutor) ExecuteBatch(commands []string) ([]*CommandE
 
 // executeWithMethod 使用指定方法执行命令
 func (ece *EnhancedCommandExecutor) executeWithMethod(command string, inputMethod InputMethod, chatMethod ChatActivationMethod, config *CommandConfig) (string, error) {
-	// 1. 确保窗口激活
-	SetForegroundWindow(ece.hwnd)
-	time.Sleep(50 * time.Millisecond)
+	// 1. 确保窗口激活 - 已注释：使用句柄操作不需要窗口置顶
+	// SetForegroundWindow(ece.hwnd)
+	// time.Sleep(50 * time.Millisecond)
 
 	// 2. 激活聊天框（如果还未激活）
 	if !ece.isInChat {

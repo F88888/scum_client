@@ -450,11 +450,6 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 		// 将请求数据转换为JSON
 		jsonData, err := json.Marshal(map[string]interface{}{
 			"image": base64Data,
-			"options": map[string]interface{}{
-				"data": map[string]interface{}{
-					"format": "dict",
-				},
-			},
 		})
 		if err != nil {
 			fmt.Printf("第%d次JSON编码失败: %v\n", i, err)

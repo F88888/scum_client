@@ -65,10 +65,12 @@ func (qce *QuickCommandExecutor) FastSendCommand(command string) (string, error)
 		time.Sleep(200 * time.Millisecond)
 	}
 
-	// 1. 快速激活游戏窗口
+	// 1. 快速激活游戏窗口 - 已注释：使用句柄操作不需要窗口置顶
+	// user32 := syscall.NewLazyDLL("user32.dll")
+	// setForegroundWindow := user32.NewProc("SetForegroundWindow")
+	// setForegroundWindow.Call(uintptr(qce.hwnd))
+
 	user32 := syscall.NewLazyDLL("user32.dll")
-	setForegroundWindow := user32.NewProc("SetForegroundWindow")
-	setForegroundWindow.Call(uintptr(qce.hwnd))
 
 	// 2. 最小延迟激活聊天框
 	time.Sleep(50 * time.Millisecond)

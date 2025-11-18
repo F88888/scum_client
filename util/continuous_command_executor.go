@@ -59,9 +59,9 @@ func (cce *ContinuousCommandExecutor) StartContinuousSession() error {
 
 	fmt.Println("开始连续命令会话...")
 
-	// 设置窗口为前台
-	SetForegroundWindow(cce.hwnd)
-	time.Sleep(100 * time.Millisecond)
+	// 设置窗口为前台 - 已注释：使用句柄操作不需要窗口置顶
+	// SetForegroundWindow(cce.hwnd)
+	// time.Sleep(100 * time.Millisecond)
 
 	// 激活聊天框（只激活一次）
 	if err := cce.inputManager.ActivateChat(CHAT_ACTIVATE_T_KEY); err != nil {

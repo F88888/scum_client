@@ -35,14 +35,14 @@ type POINT struct {
 	X, Y int32
 }
 
-// INPUT 结构体
+// INPUT 结构体 (必须是28字节)
 type INPUT struct {
 	Type uint32
+	_    [4]byte // 对齐填充
 	Mi   MOUSEINPUT
-	_    [8]byte // 填充以匹配结构体大小
 }
 
-// MOUSEINPUT 结构体
+// MOUSEINPUT 结构体 (20字节)
 type MOUSEINPUT struct {
 	Dx          int32
 	Dy          int32
@@ -274,14 +274,22 @@ func GetCursorPos() (int, int, bool) {
 // @function: SendInput
 // @description: 发送硬件级别的输入事件
 // @param: inputs []INPUT 输入事件数组
-// @return: bool
-func SendInput(inputs []INPUT) bool {
-	ret, _, _ := procSendInput.Call(
+// @return: uint32 实际发送成功的事件数量
+func SendInput(inputs []INPUT) uint32 {
+	ret, _, err := procSendInput.Call(
 		uintptr(len(inputs)),
 		uintptr(unsafe.Pointer(&inputs[0])),
 		unsafe.Sizeof(inputs[0]),
 	)
-	return ret == uintptr(len(inputs))
+
+	// 调试信息
+	if ret == 0 {
+		fmt.Printf("[DEBUG] SendInput失败: %v, 结构体大小: %d 字节\n", err, unsafe.Sizeof(inputs[0]))
+	} else {
+		fmt.Printf("[DEBUG] SendInput成功: 发送了 %d/%d 个事件\n", ret, len(inputs))
+	}
+
+	return uint32(ret)
 }
 
 // MouseClick
@@ -317,7 +325,8 @@ func MouseClick() bool {
 		},
 	}
 
-	return SendInput(inputs)
+	sent := SendInput(inputs)
+	return sent == uint32(len(inputs))
 }
 
 // GetWindowThreadProcessId
@@ -382,44 +391,111 @@ func SetFocus(hwnd syscall.Handle) bool {
 // @param: hwnd syscall.Handle 窗口句柄, x, y int 窗口内坐标
 // @return: error
 func ClickWindowPosition(hwnd syscall.Handle, x, y int) error {
+	fmt.Printf("[DEBUG] 开始点击流程 - 窗口内坐标: (%d, %d)\n", x, y)
+
 	// 1. 确保窗口可见且未最小化
 	if IsIconic(hwnd) {
+		fmt.Println("[DEBUG] 窗口已最小化，正在恢复...")
 		ShowWindow(hwnd, 9) // SW_RESTORE = 9
+		time.Sleep(100 * time.Millisecond)
 	}
 
-	// 2. 将窗口置于前台
+	// 2. 将窗口置于前台（SendInput需要窗口具有焦点）
+	fmt.Println("[DEBUG] 设置窗口为前台窗口...")
 	BringWindowToTop(hwnd)
 	SetForegroundWindow(hwnd)
+	time.Sleep(100 * time.Millisecond)
 
 	// 3. 附加线程输入以确保焦点设置生效（对游戏窗口很重要）
 	windowThreadId, _ := GetWindowThreadProcessId(hwnd)
 	currentThreadId := GetCurrentThreadId()
-	if windowThreadId != currentThreadId {
-		AttachThreadInput(currentThreadId, windowThreadId, true)
-		defer AttachThreadInput(currentThreadId, windowThreadId, false)
+	fmt.Printf("[DEBUG] 窗口线程ID: %d, 当前线程ID: %d\n", windowThreadId, currentThreadId)
+
+	if windowThreadId != currentThreadId && windowThreadId != 0 {
+		fmt.Println("[DEBUG] 附加线程输入...")
+		if AttachThreadInput(currentThreadId, windowThreadId, true) {
+			defer AttachThreadInput(currentThreadId, windowThreadId, false)
+			time.Sleep(50 * time.Millisecond)
+		}
 	}
 
 	// 4. 设置焦点到窗口
+	fmt.Println("[DEBUG] 设置窗口焦点...")
 	SetFocus(hwnd)
+	time.Sleep(50 * time.Millisecond)
 
 	// 5. 将客户区坐标转换为屏幕坐标
 	screenX, screenY, success := ClientToScreen(hwnd, x, y)
 	if !success {
 		return fmt.Errorf("坐标转换失败")
 	}
+	fmt.Printf("[DEBUG] 坐标转换成功 - 屏幕坐标: (%d, %d)\n", screenX, screenY)
 
 	// 6. 移动鼠标到目标位置
 	if !SetCursorPos(screenX, screenY) {
 		return fmt.Errorf("移动鼠标失败")
 	}
+	fmt.Printf("[DEBUG] 鼠标已移动到屏幕坐标: (%d, %d)\n", screenX, screenY)
+
+	// 验证鼠标位置
+	curX, curY, _ := GetCursorPos()
+	fmt.Printf("[DEBUG] 验证鼠标当前位置: (%d, %d)\n", curX, curY)
 
 	// 短暂延迟，让鼠标移动生效
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	// 7. 执行鼠标点击（硬件级别）
+	fmt.Println("[DEBUG] 准备执行硬件级别点击...")
 	if !MouseClick() {
-		return fmt.Errorf("执行鼠标点击失败")
+		// SendInput失败，尝试备选方案：使用PostMessage
+		fmt.Println("[WARN] SendInput点击失败，尝试使用PostMessage备选方案...")
+		return ClickWindowPositionFallback(hwnd, x, y)
 	}
 
+	fmt.Println("[DEBUG] 硬件级别点击成功")
 	return nil
+}
+
+// ClickWindowPositionFallback
+// @author: [Fantasia](https://www.npc0.com)
+// @function: ClickWindowPositionFallback
+// @description: 点击窗口指定位置的备选方案（使用PostMessage）
+// @param: hwnd syscall.Handle 窗口句柄, x, y int 窗口内坐标
+// @return: error
+func ClickWindowPositionFallback(hwnd syscall.Handle, x, y int) error {
+	fmt.Printf("[DEBUG] 使用PostMessage备选方案点击坐标: (%d, %d)\n", x, y)
+
+	const (
+		WM_LBUTTONDOWN = 0x0201
+		WM_LBUTTONUP   = 0x0202
+		MK_LBUTTON     = 0x0001
+	)
+
+	// 将坐标编码为LPARAM
+	lParam := uintptr(x) | (uintptr(y) << 16)
+
+	// 发送鼠标按下消息
+	ret1, _, _ := procPostMessage.Call(
+		uintptr(hwnd),
+		WM_LBUTTONDOWN,
+		MK_LBUTTON,
+		lParam,
+	)
+
+	time.Sleep(30 * time.Millisecond)
+
+	// 发送鼠标释放消息
+	ret2, _, _ := procPostMessage.Call(
+		uintptr(hwnd),
+		WM_LBUTTONUP,
+		0,
+		lParam,
+	)
+
+	if ret1 != 0 && ret2 != 0 {
+		fmt.Println("[DEBUG] PostMessage点击成功")
+		return nil
+	}
+
+	return fmt.Errorf("PostMessage点击也失败了")
 }
