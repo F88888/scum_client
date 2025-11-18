@@ -112,30 +112,16 @@ func logDebug(format string, v ...interface{}) {
 }
 
 // 检查是否在聊天界面的更可靠方法
-func isChatInterfaceOpen(hand syscall.Handle) bool {
+func isChatInterfaceOpen(hand syscall.Handle) string {
 	// 检查MUTE按钮是否存在（聊天界面的标志）
 	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand, "MUTE") == nil {
 		// 检查当前聊天模式，按输入框颜色
 		cache, _ := util.GetTextPositionFromCache("MUTE")
-		s := util.SpecifiedCoordinateColor(hand, cache.X2+100, cache.Y1+5)
-		fmt.Println("当前颜色:", s)
-		return true
+		colorHex := util.SpecifiedCoordinateColor(hand, cache.X2+100, cache.Y1+5)
+		chatMode := util.GetChatModeByColor(colorHex)
+		return chatMode
 	}
-	return false
-}
-
-// 获取当前聊天模式
-func getCurrentChatMode(hand syscall.Handle) string {
-	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand, "GLOBAL") == nil {
-		return "GLOBAL"
-	}
-	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand, "LOCAL") == nil {
-		return "LOCAL"
-	}
-	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand, "ADMIN") == nil {
-		return "ADMIN"
-	}
-	return "UNKNOWN"
+	return ""
 }
 
 // 优化的聊天框激活函数
@@ -147,7 +133,8 @@ func ensureChatBoxActive(hand syscall.Handle) bool {
 	// time.Sleep(200 * time.Millisecond)
 
 	// 首先检查是否已经在聊天界面
-	if !isChatInterfaceOpen(hand) {
+	currentMode := isChatInterfaceOpen(hand)
+	if currentMode == "" {
 		logDebug("聊天界面未打开，尝试按T键激活")
 
 		// 先按ESC确保退出任何菜单
@@ -159,7 +146,7 @@ func ensureChatBoxActive(hand syscall.Handle) bool {
 		time.Sleep(500 * time.Millisecond)
 
 		// 验证是否成功激活
-		if !isChatInterfaceOpen(hand) {
+		if currentMode = isChatInterfaceOpen(hand); currentMode == "" {
 			logError("按T后仍无法激活聊天界面")
 			return false
 		}
@@ -167,10 +154,6 @@ func ensureChatBoxActive(hand syscall.Handle) bool {
 	} else {
 		logDebug("聊天界面已经处于激活状态")
 	}
-
-	// 检查并切换到GLOBAL模式
-	currentMode := getCurrentChatMode(hand)
-	logDebug("当前聊天模式: %s", currentMode)
 
 	maxAttempts := 5
 	for i := 0; i < maxAttempts && currentMode != "GLOBAL"; i++ {
@@ -192,7 +175,7 @@ func ensureChatBoxActive(hand syscall.Handle) bool {
 		}
 
 		// 重新检查模式
-		currentMode = getCurrentChatMode(hand)
+		currentMode = isChatInterfaceOpen(hand)
 	}
 
 	if currentMode == "GLOBAL" {
@@ -202,23 +185,6 @@ func ensureChatBoxActive(hand syscall.Handle) bool {
 		logError("无法切换到GLOBAL模式，当前模式: %s", currentMode)
 		return false
 	}
-}
-
-// 清空剪贴板并验证
-func clearClipboard() error {
-	maxAttempts := 5
-	for i := 0; i < maxAttempts; i++ {
-		_ = clipboard.WriteAll("")
-		time.Sleep(50 * time.Millisecond)
-
-		if content, err := clipboard.ReadAll(); err == nil && content == "" {
-			logDebug("剪贴板已清空")
-			return nil
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	logError("清空剪贴板失败，尝试了%d次", maxAttempts)
-	return errors.New("无法清空剪贴板")
 }
 
 // 写入剪贴板并验证
@@ -566,7 +532,6 @@ func ChatMonitorWithActivation(hwnd syscall.Handle) {
 
 	for {
 		// 获取所有待处理指令
-		isChatInterfaceOpen(hwnd)
 		commands := getAllPendingCommands()
 
 		if len(commands) > 0 {
@@ -684,7 +649,7 @@ func SaveChat(text string) {
 // @author: [Fantasia](https://www.npc0.com)
 // @function: Send
 // @description: 发送命令 - 高速优化版本
-func Send(hwnd syscall.Handle, text string) (out string, err error) {
+func Send(hand syscall.Handle, text string) (out string, err error) {
 	startTime := time.Now()
 	logInfo("开始发送指令: %s", text)
 
@@ -695,7 +660,7 @@ func Send(hwnd syscall.Handle, text string) (out string, err error) {
 	}
 
 	// 设置窗口为前台并确保聊天框激活
-	if !ensureChatBoxActive(hwnd) {
+	if !ensureChatBoxActive(hand) {
 		logError("无法激活聊天框")
 		return "", errors.New("无法激活聊天框")
 	}
@@ -783,7 +748,7 @@ func Send(hwnd syscall.Handle, text string) (out string, err error) {
 		}
 
 		// 快速检查聊天框状态
-		if !isChatInterfaceOpen(hwnd) {
+		if isChatInterfaceOpen(hand) == "" {
 			logError("聊天框丢失")
 			updateCommandStats(commandToSend, time.Since(startTime), false)
 			return "", errors.New("聊天框状态异常")
@@ -811,7 +776,7 @@ func Send(hwnd syscall.Handle, text string) (out string, err error) {
 // @author: [Fantasia](https://www.npc0.com)
 // @function: ChatMonitor
 // @description: 聊天监控信息 - 优化版本
-func ChatMonitor(hwnd syscall.Handle) {
+func ChatMonitor(hand syscall.Handle) {
 	// init
 	var i int
 	var err error
@@ -820,7 +785,7 @@ func ChatMonitor(hwnd syscall.Handle) {
 	logInfo("开始聊天监控...")
 
 	// 初始化传送指令
-	_, _ = Send(hwnd, "#Teleport 0 0 0")
+	_, _ = Send(hand, "#Teleport 0 0 0")
 
 	for {
 		// 延时
@@ -829,11 +794,11 @@ func ChatMonitor(hwnd syscall.Handle) {
 		// 获取并执行服务器指令
 		if command := run(); command != "" {
 			logInfo("收到服务器指令: %s", command)
-			if out, err = Send(hwnd, command); err != nil {
+			if out, err = Send(hand, command); err != nil {
 				logError("执行指令失败: %v，尝试重试", err)
 				// 重试一次
 				time.Sleep(1 * time.Second)
-				if out, err = Send(hwnd, command); err != nil {
+				if out, err = Send(hand, command); err != nil {
 					logError("重试失败，退出监控: %v", err)
 					return
 				}
@@ -846,7 +811,7 @@ func ChatMonitor(hwnd syscall.Handle) {
 			logDebug("开始获取载具和玩家信息...")
 
 			// 获取载具列表
-			if out, err = Send(hwnd, "#ListSpawnedVehicles true"); err != nil {
+			if out, err = Send(hand, "#ListSpawnedVehicles true"); err != nil {
 				logError("获取载具列表失败: %v", err)
 				return
 			} else if out != "" {
@@ -859,7 +824,7 @@ func ChatMonitor(hwnd syscall.Handle) {
 			}
 
 			// 获取玩家列表
-			if out, err = Send(hwnd, "#ListPlayers true"); err != nil {
+			if out, err = Send(hand, "#ListPlayers true"); err != nil {
 				logError("获取玩家列表失败: %v", err)
 				return
 			} else if out != "" {
@@ -880,7 +845,7 @@ func ChatMonitor(hwnd syscall.Handle) {
 			var flagNum = 1
 			for {
 				flagCommand := fmt.Sprintf("#listflags %d true", flagNum)
-				if out, err = Send(hwnd, flagCommand); err != nil {
+				if out, err = Send(hand, flagCommand); err != nil {
 					logError("获取领地信息失败 %s: %v", flagCommand, err)
 					return
 				} else {
@@ -912,7 +877,7 @@ func ChatMonitor(hwnd syscall.Handle) {
 			}
 
 			// 获取队伍信息
-			if out, err = Send(hwnd, "#dumpallsquadsinfolist"); err != nil {
+			if out, err = Send(hand, "#dumpallsquadsinfolist"); err != nil {
 				logError("获取队伍信息失败: %v", err)
 				return
 			} else if out != "" {
@@ -930,12 +895,5 @@ func ChatMonitor(hwnd syscall.Handle) {
 		if i > 1000 {
 			i = 0
 		}
-	}
-}
-
-// 程序退出时关闭日志文件
-func CloseLog() {
-	if logFile != nil {
-		logFile.Close()
 	}
 }

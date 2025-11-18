@@ -94,9 +94,8 @@ func checkGameState(hand syscall.Handle) string {
 	}
 
 	// 3. 检查是否在聊天界面
-	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand, "MUTE") == nil {
+	if currentMode := isChatInterfaceOpen(hand); currentMode != "" {
 		// 进一步检查聊天模式
-		currentMode := getCurrentChatMode(hand)
 		return "GAME_" + currentMode
 	}
 
@@ -224,7 +223,7 @@ func Start() {
 		time.Sleep(300 * time.Millisecond)
 
 		// 验证是否切换成功
-		if getCurrentChatMode(hand) == "GLOBAL" {
+		if isChatInterfaceOpen(hand) == "GLOBAL" {
 			logInfo("成功切换到GLOBAL模式，启动聊天监控...")
 			errorNumber2 = 0
 			errorNumber = 0
@@ -242,7 +241,7 @@ func Start() {
 		time.Sleep(300 * time.Millisecond)
 
 		// 验证是否切换成功
-		if getCurrentChatMode(hand) == "GLOBAL" {
+		if isChatInterfaceOpen(hand) == "GLOBAL" {
 			logInfo("成功切换到GLOBAL模式，启动聊天监控...")
 			errorNumber2 = 0
 			errorNumber = 0

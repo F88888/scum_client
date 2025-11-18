@@ -8,10 +8,12 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	_const "qq_client/internal/const"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -354,4 +356,108 @@ func CheckIfAppRunning(appName string) (bool, error) {
 
 	// 检查输出中是否包含指定的应用名称
 	return strings.Contains(out.String(), appName), nil
+}
+
+// hexToRGB 将十六进制颜色字符串转换为RGB值
+// @description: 将格式为"RRGGBB"的十六进制颜色字符串转换为RGB值
+// @param: hex string 十六进制颜色字符串（如"FF0000"）
+// @return: r, g, b uint8 RGB值，error 错误信息
+func hexToRGB(hex string) (r, g, b uint8, err error) {
+	// 移除可能的前缀
+	hex = strings.TrimPrefix(hex, "#")
+	hex = strings.ToUpper(hex)
+
+	// 检查长度
+	if len(hex) != 6 {
+		return 0, 0, 0, fmt.Errorf("颜色字符串长度必须为6位: %s", hex)
+	}
+
+	// 解析R值
+	rVal, err := strconv.ParseUint(hex[0:2], 16, 8)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("解析R值失败: %v", err)
+	}
+
+	// 解析G值
+	gVal, err := strconv.ParseUint(hex[2:4], 16, 8)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("解析G值失败: %v", err)
+	}
+
+	// 解析B值
+	bVal, err := strconv.ParseUint(hex[4:6], 16, 8)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("解析B值失败: %v", err)
+	}
+
+	return uint8(rVal), uint8(gVal), uint8(bVal), nil
+}
+
+// colorDistance 计算两个颜色在RGB空间中的欧几里得距离
+// @description: 计算两个十六进制颜色字符串在RGB空间中的距离
+// @param: color1, color2 string 两个十六进制颜色字符串（格式为"RRGGBB"）
+// @return: float64 颜色距离，error 错误信息
+func colorDistance(color1, color2 string) (float64, error) {
+	r1, g1, b1, err := hexToRGB(color1)
+	if err != nil {
+		return 0, err
+	}
+
+	r2, g2, b2, err := hexToRGB(color2)
+	if err != nil {
+		return 0, err
+	}
+
+	// 计算欧几里得距离
+	dr := float64(r1) - float64(r2)
+	dg := float64(g1) - float64(g2)
+	db := float64(b1) - float64(b2)
+
+	distance := math.Sqrt(dr*dr + dg*dg + db*db)
+	return distance, nil
+}
+
+// IsColorSimilar 判断两个颜色是否接近
+// @description: 判断两个十六进制颜色字符串是否在指定阈值内接近
+// @param: color1, color2 string 两个十六进制颜色字符串（格式为"RRGGBB"）
+// @param: threshold float64 颜色匹配阈值（默认使用常量值）
+// @return: bool 是否接近，error 错误信息
+func IsColorSimilar(color1, color2 string, threshold float64) (bool, error) {
+	if threshold <= 0 {
+		threshold = _const.ColorMatchThreshold
+	}
+
+	distance, err := colorDistance(color1, color2)
+	if err != nil {
+		return false, err
+	}
+
+	return distance <= threshold, nil
+}
+
+// GetChatModeByColor 根据颜色判断聊天模式
+// @description: 根据指定坐标的颜色判断当前聊天模式
+// @param: colorHex string 十六进制颜色字符串（格式为"RRGGBB"）
+// @return: string 聊天模式（LOCAL/GLOBAL/ADMIN/UNKNOWN）
+func GetChatModeByColor(colorHex string) string {
+	// 转换为大写以便比较
+	colorHex = strings.ToUpper(strings.TrimPrefix(colorHex, "#"))
+
+	// 判断是否接近 LOCAL 颜色
+	if similar, err := IsColorSimilar(colorHex, _const.ChatColorLocal, 0); err == nil && similar {
+		return "LOCAL"
+	}
+
+	// 判断是否接近 GLOBAL 颜色
+	if similar, err := IsColorSimilar(colorHex, _const.ChatColorGlobal, 0); err == nil && similar {
+		return "GLOBAL"
+	}
+
+	// 判断是否接近 ADMIN 颜色
+	if similar, err := IsColorSimilar(colorHex, _const.ChatColorAdmin, 0); err == nil && similar {
+		return "ADMIN"
+	}
+
+	// 默认返回 UNKNOWN
+	return "UNKNOWN"
 }
