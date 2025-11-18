@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"qq_client/global"
+	_const "qq_client/internal/const"
 	"qq_client/util"
 	"regexp"
 	"strings"
@@ -139,11 +140,11 @@ func ensureChatBoxActive(hand syscall.Handle) bool {
 		logDebug("聊天界面未打开，尝试按T键激活")
 
 		// 先按ESC确保退出任何菜单
-		_ = robotgo.KeyTap("escape")
+		_ = util.KeyTapToWindow(hand, _const.VK_ESCAPE)
 		time.Sleep(100 * time.Millisecond)
 
 		// 按T激活聊天
-		_ = robotgo.KeyTap("t")
+		_ = util.KeyTapToWindow(hand, _const.VK_T)
 		time.Sleep(500 * time.Millisecond)
 
 		// 验证是否成功激活
@@ -162,16 +163,16 @@ func ensureChatBoxActive(hand syscall.Handle) bool {
 
 		switch currentMode {
 		case "LOCAL":
-			_ = robotgo.KeyTap("tab")
+			_ = util.KeyTapToWindow(hand, _const.VK_TAB)
 			time.Sleep(300 * time.Millisecond)
 		case "ADMIN":
-			_ = robotgo.KeyTap("tab")
+			_ = util.KeyTapToWindow(hand, _const.VK_TAB)
 			time.Sleep(150 * time.Millisecond)
-			_ = robotgo.KeyTap("tab")
+			_ = util.KeyTapToWindow(hand, _const.VK_TAB)
 			time.Sleep(300 * time.Millisecond)
 		case "UNKNOWN":
 			logError("未知聊天模式，尝试按tab切换")
-			_ = robotgo.KeyTap("tab")
+			_ = util.KeyTapToWindow(hand, _const.VK_TAB)
 			time.Sleep(300 * time.Millisecond)
 		}
 
@@ -517,7 +518,7 @@ func executePeriodicCommands(hwnd syscall.Handle) {
 	logInfo("定时指令执行完毕，成功: %d/%d，耗时: %v，关闭聊天框",
 		successCount, len(periodicCommands), duration)
 
-	_ = robotgo.KeyTap("escape")
+	_ = util.KeyTapToWindow(hwnd, _const.VK_ESCAPE)
 	time.Sleep(200 * time.Millisecond) // 从300ms减少到200ms
 
 	// 更新最后执行时间
@@ -593,7 +594,7 @@ func ChatMonitorWithActivation(hwnd syscall.Handle) {
 			logInfo("批量指令执行完毕，成功: %d/%d，耗时: %v，关闭聊天框",
 				successCount, len(commands), batchDuration)
 
-			_ = robotgo.KeyTap("escape")
+			_ = util.KeyTapToWindow(hwnd, _const.VK_ESCAPE)
 			time.Sleep(200 * time.Millisecond) // 从300ms减少到200ms
 
 			// 清空指令缓存
@@ -682,9 +683,9 @@ func Send(hand syscall.Handle, text string) (out string, err error) {
 	// 第二步：快速清空输入框（优化时序）
 	robotgo.MoveClick(82, 319, "", false)
 	time.Sleep(80 * time.Millisecond) // 从150ms减少到80ms
-	_ = robotgo.KeyTap("a", "ctrl")
+	_ = util.KeyTapToWindow(hand, _const.VK_A, _const.VK_CONTROL)
 	time.Sleep(30 * time.Millisecond) // 从50ms减少到30ms
-	_ = robotgo.KeyTap("delete")
+	_ = util.KeyTapToWindow(hand, _const.VK_DELETE)
 	time.Sleep(80 * time.Millisecond) // 从150ms减少到80ms
 
 	// 第三步：快速写入指令到剪贴板
@@ -698,9 +699,9 @@ func Send(hand syscall.Handle, text string) (out string, err error) {
 	}
 
 	// 第四步：快速粘贴并发送指令
-	_ = robotgo.KeyTap("v", "ctrl")
+	_ = util.KeyTapToWindow(hand, _const.VK_V, _const.VK_CONTROL)
 	time.Sleep(120 * time.Millisecond) // 从200ms减少到120ms
-	_ = robotgo.KeyTap("enter")
+	_ = util.KeyTapToWindow(hand, _const.VK_RETURN)
 
 	logInfo("指令已发送: %s", commandToSend)
 

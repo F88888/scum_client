@@ -154,6 +154,61 @@ func SendKeyToWindow(hwnd syscall.Handle, vkCode uint16) bool {
 	return ret1 != 0 && ret2 != 0
 }
 
+// KeyTapToWindow
+// @author: [Fantasia](https://www.npc0.com)
+// @function: KeyTapToWindow
+// @description: 向指定窗口发送按键（使用虚拟键码常量）
+// @param: hwnd syscall.Handle 窗口句柄, vkCode uint16 虚拟键码（使用 _const 包中的常量）, modifiers ...uint16 修饰键虚拟键码（如 _const.VK_CONTROL, _const.VK_ALT, _const.VK_SHIFT）
+// @return: error
+func KeyTapToWindow(hwnd syscall.Handle, vkCode uint16, modifiers ...uint16) error {
+	const (
+		WM_KEYDOWN = 0x0100
+		WM_KEYUP   = 0x0101
+	)
+
+	// 先按下所有修饰键
+	for _, modVk := range modifiers {
+		procPostMessage.Call(
+			uintptr(hwnd),
+			WM_KEYDOWN,
+			uintptr(modVk),
+			0,
+		)
+	}
+
+	// 按下主键
+	ret1, _, _ := procPostMessage.Call(
+		uintptr(hwnd),
+		WM_KEYDOWN,
+		uintptr(vkCode),
+		0,
+	)
+
+	// 释放主键
+	ret2, _, _ := procPostMessage.Call(
+		uintptr(hwnd),
+		WM_KEYUP,
+		uintptr(vkCode),
+		0,
+	)
+
+	// 释放所有修饰键（按相反顺序）
+	for i := len(modifiers) - 1; i >= 0; i-- {
+		procPostMessage.Call(
+			uintptr(hwnd),
+			WM_KEYUP,
+			uintptr(modifiers[i]),
+			0,
+		)
+	}
+
+	if ret1 == 0 || ret2 == 0 {
+		return fmt.Errorf("发送按键消息失败")
+	}
+
+	return nil
+}
+
 // IsWindow
 // @author: [Fantasia](https://www.npc0.com)
 // @function: IsWindow

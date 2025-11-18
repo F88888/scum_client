@@ -8,6 +8,7 @@ import (
 
 	"github.com/atotto/clipboard"
 	"github.com/go-vgo/robotgo"
+	_const "qq_client/internal/const"
 )
 
 var (
@@ -148,24 +149,14 @@ func (eim *EnhancedInputManager) ActivateChat(method ChatActivationMethod) error
 
 // activateChatWithTKey 使用T键激活聊天框
 func (eim *EnhancedInputManager) activateChatWithTKey() error {
-	// 方法1：使用robotgo
-	err := robotgo.KeyTap("t")
-	if err != nil {
-		// 方法2：使用Windows API直接发送按键
-		return eim.sendVirtualKey(VK_T)
-	}
-	return nil
+	// 使用KeyTapToWindow向指定窗口发送按键
+	return KeyTapToWindow(eim.hwnd, _const.VK_T)
 }
 
 // activateChatWithSlashKey 使用/键激活命令输入
 func (eim *EnhancedInputManager) activateChatWithSlashKey() error {
-	// 方法1：使用robotgo
-	err := robotgo.KeyTap("/")
-	if err != nil {
-		// 方法2：使用Windows API
-		return eim.sendVirtualKey(VK_SLASH)
-	}
-	return nil
+	// 使用KeyTapToWindow向指定窗口发送按键
+	return KeyTapToWindow(eim.hwnd, _const.VK_OEM_2)
 }
 
 // activateChatWithWindowMsg 使用窗口消息激活聊天框

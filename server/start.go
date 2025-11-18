@@ -4,6 +4,7 @@ import (
 	"github.com/go-vgo/robotgo"
 	"os/exec"
 	"qq_client/global"
+	_const "qq_client/internal/const"
 	"qq_client/util"
 	"syscall"
 	"time"
@@ -176,7 +177,7 @@ func Start() {
 		if util.SpecifiedCoordinateColor(hand, 97, 142) != "ffffff" {
 			// 没有机器人,切换机器人模式
 			logInfo("未检测到机器人模式，正在切换...")
-			if err = robotgo.KeyTap("d", "ctrl"); err != nil {
+			if err = util.KeyTapToWindow(hand, _const.VK_D, _const.VK_CONTROL); err != nil {
 				logError("切换机器人模式失败: %v", err)
 				errorNumber++
 				return
@@ -219,7 +220,7 @@ func Start() {
 	case currentState == "GAME_LOCAL":
 		// 在LOCAL模式，需要切换到GLOBAL
 		logInfo("检测到LOCAL模式，切换聊天模式...")
-		_ = robotgo.KeyTap("tab")
+		_ = util.KeyTapToWindow(hand, _const.VK_TAB)
 		time.Sleep(300 * time.Millisecond)
 
 		// 验证是否切换成功
@@ -235,9 +236,9 @@ func Start() {
 	case currentState == "GAME_ADMIN":
 		// 在ADMIN模式，切换到GLOBAL模式
 		logInfo("检测到ADMIN模式，切换到GLOBAL模式...")
-		_ = robotgo.KeyTap("tab")
+		_ = util.KeyTapToWindow(hand, _const.VK_TAB)
 		time.Sleep(150 * time.Millisecond)
-		_ = robotgo.KeyTap("tab")
+		_ = util.KeyTapToWindow(hand, _const.VK_TAB)
 		time.Sleep(300 * time.Millisecond)
 
 		// 验证是否切换成功
@@ -265,11 +266,11 @@ func Start() {
 		// 只有在状态稳定且计数较低时才按T
 		if chatStateStableCount < 3 {
 			// 先按ESC确保退出任何菜单
-			_ = robotgo.KeyTap("escape")
+			_ = util.KeyTapToWindow(hand, _const.VK_ESCAPE)
 			time.Sleep(200 * time.Millisecond)
 
 			// 按T激活聊天
-			_ = robotgo.KeyTap("t")
+			_ = util.KeyTapToWindow(hand, _const.VK_T)
 			time.Sleep(500 * time.Millisecond)
 		} else {
 			logError("聊天状态持续未知，可能需要手动干预")
