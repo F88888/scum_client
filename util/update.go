@@ -34,15 +34,6 @@ type SelfUpdater struct {
 	tempDir        string
 }
 
-// NewSelfUpdater 创建新的自我更新器
-func NewSelfUpdater(currentVersion string) *SelfUpdater {
-	return &SelfUpdater{
-		currentVersion: currentVersion,
-		updateURL:      UpdateCheckURL,
-		tempDir:        UpdateTempDir,
-	}
-}
-
 // CheckForUpdates 检查更新
 func (u *SelfUpdater) CheckForUpdates() (version string, downloadURL string, err error) {
 	fmt.Printf("Checking for updates from: %s\n", u.updateURL)

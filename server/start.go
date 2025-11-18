@@ -27,18 +27,6 @@ var hasPendingCommands = false
 // 添加配置替换标记
 var configReplaced = false
 
-// isWindowInCorrectPosition 检查窗口是否在正确位置
-func isWindowInCorrectPosition(hand syscall.Handle) bool {
-	if hand == 0 {
-		return false
-	}
-
-	// 获取当前窗口位置
-	// 这里可以添加具体的窗口位置检查逻辑
-	// 暂时返回 false 以触发位置设置
-	return false
-}
-
 // setWindowPositionOnce 只在必要时设置窗口位置
 func setWindowPositionOnce(hand syscall.Handle) {
 	// 如果位置已经正确，跳过设置

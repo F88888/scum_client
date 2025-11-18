@@ -10,6 +10,8 @@ import sys
 import json
 import base64
 import logging
+import shutil
+import tarfile
 from io import BytesIO
 from paddleocr import PaddleOCR
 from flask import Flask, request, jsonify
@@ -17,7 +19,11 @@ from PIL import Image
 import traceback
 
 # 设置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] [%(levelname)8s] %(filename)s:%(lineno)d - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -26,8 +32,70 @@ app = Flask(__name__)
 ocr = None
 ocr_initialized = False
 
+def check_and_clean_corrupted_models(cache_dir):
+    """
+    检查并清理损坏的模型文件
+    
+    @description: 扫描缓存目录中的tar文件，尝试验证其完整性，删除损坏的文件
+    @param: cache_dir string 模型缓存目录
+    @return: cleaned_count int 清理的文件数量
+    """
+    cleaned_count = 0
+    
+    if not os.path.exists(cache_dir):
+        return cleaned_count
+    
+    logger.info(f"正在检查模型缓存目录: {cache_dir}")
+    
+    # 遍历缓存目录及其子目录
+    for root, dirs, files in os.walk(cache_dir):
+        for filename in files:
+            if filename.endswith('.tar.gz') or filename.endswith('.tar'):
+                filepath = os.path.join(root, filename)
+                
+                # 检查文件大小
+                try:
+                    file_size = os.path.getsize(filepath)
+                    
+                    # 如果文件太小（< 100KB），可能是下载不完整
+                    if file_size < 100 * 1024:
+                        logger.warning(f"发现可疑的模型文件（文件过小）: {filepath} ({file_size} bytes)")
+                        os.remove(filepath)
+                        cleaned_count += 1
+                        logger.info(f"已删除损坏的模型文件: {filepath}")
+                        continue
+                    
+                    # 尝试打开 tar 文件验证完整性
+                    try:
+                        with tarfile.open(filepath, 'r:*') as tar:
+                            # 尝试读取成员列表
+                            members = tar.getmembers()
+                            if len(members) == 0:
+                                raise Exception("tar文件为空")
+                        logger.debug(f"模型文件完整性验证通过: {filepath}")
+                    except Exception as e:
+                        logger.warning(f"发现损坏的模型文件: {filepath}, 错误: {e}")
+                        os.remove(filepath)
+                        cleaned_count += 1
+                        logger.info(f"已删除损坏的模型文件: {filepath}")
+                        
+                except Exception as e:
+                    logger.error(f"检查文件时出错 {filepath}: {e}")
+    
+    if cleaned_count > 0:
+        logger.info(f"共清理了 {cleaned_count} 个损坏的模型文件")
+    else:
+        logger.info("未发现损坏的模型文件")
+    
+    return cleaned_count
+
 def initialize_paddleocr():
-    """初始化 PaddleOCR"""
+    """
+    初始化 PaddleOCR
+    
+    @description: 初始化PaddleOCR实例，设置模型缓存目录，检查并清理损坏的模型文件
+    @return: success bool 初始化是否成功
+    """
     global ocr, ocr_initialized
     
     if ocr_initialized:
@@ -43,6 +111,14 @@ def initialize_paddleocr():
         # 确保缓存目录存在
         os.makedirs(paddle_cache_dir, exist_ok=True)
         logger.info(f"PaddleOCR 模型缓存目录: {paddle_cache_dir}")
+        
+        # 检查并清理损坏的模型文件
+        try:
+            cleaned_count = check_and_clean_corrupted_models(paddle_cache_dir)
+            if cleaned_count > 0:
+                logger.info("已清理损坏的模型文件，将重新下载")
+        except Exception as e:
+            logger.warning(f"清理损坏模型文件时出错（继续初始化）: {e}")
         
         # 设置环境变量指定模型缓存路径
         os.environ['PADDLEOCR_MODEL_PATH'] = paddle_cache_dir
@@ -64,19 +140,26 @@ def initialize_paddleocr():
                 logger.info(f"找到自定义模型: {model_path}")
                 break
         
+        # 初始化 PaddleOCR
+        logger.info("开始加载 PaddleOCR 模型...")
+        
         if custom_model_found:
             logger.info(f"使用自定义英文识别模型: {custom_model_path}")
-            # 使用自定义英文识别模型 - 仅使用最基础的参数
             ocr = PaddleOCR(
                 use_gpu=False,
-                text_recognition_model_dir=custom_model_path
+                lang='en',
+                rec_model_dir=custom_model_path,
+                show_log=False
             )
         else:
-            logger.info("使用默认英文模型（首次使用将自动下载到系统缓存目录）")
-            
-            # 使用默认模型 - 仅使用最基础的参数，避免使用不支持的参数
+            logger.info("使用默认英文模型（首次使用将自动下载）")
             ocr = PaddleOCR(
-                use_gpu=False   # 明确使用CPU，避免GPU相关问题
+                use_gpu=False,
+                lang='en',
+                show_log=False,
+                use_angle_cls=False,  # 禁用角度分类，加快识别速度
+                det=True,              # 启用文字检测
+                rec=True               # 启用文字识别
             )
         
         ocr_initialized = True
@@ -85,11 +168,32 @@ def initialize_paddleocr():
         
     except Exception as e:
         logger.error(f"PaddleOCR 初始化失败: {e}")
-        logger.error(traceback.format_exc())
+        logger.error(f"错误详情:\n{traceback.format_exc()}")
+        
+        # 如果初始化失败，尝试清理所有模型缓存
+        try:
+            logger.warning("初始化失败，尝试清理所有模型缓存...")
+            if os.path.exists(paddle_cache_dir):
+                # 只清理 whl 目录下的模型文件
+                whl_dir = os.path.join(paddle_cache_dir, "whl")
+                if os.path.exists(whl_dir):
+                    shutil.rmtree(whl_dir)
+                    logger.info(f"已清理模型缓存目录: {whl_dir}")
+                    logger.info("请重启服务以重新下载模型")
+        except Exception as clean_error:
+            logger.error(f"清理缓存失败: {clean_error}")
+        
         return False
 
 def process_ocr_result(result, target_text=None):
-    """处理 OCR 识别结果"""
+    """
+    处理 OCR 识别结果
+    
+    @description: 提取OCR识别结果中的文字，可选检查是否包含目标文字
+    @param: result list OCR识别结果
+    @param: target_text string 目标文字（可选）
+    @return: response dict 处理后的响应数据
+    """
     if not result:
         return {"code": 200, "data": "", "message": "没有识别到文字"}
     
@@ -119,22 +223,34 @@ def process_ocr_result(result, target_text=None):
 
 @app.route('/api/ocr', methods=['POST'])
 def ocr_recognition():
-    """OCR 识别接口"""
+    """
+    OCR 识别接口
+    
+    @Tags OCR
+    @Summary OCR文字识别
+    @Description 接收Base64编码的图片，返回识别的文字内容
+    @Accept application/json
+    @Produce application/json
+    @Success 200 {object} response.Response{data=string} "识别成功"
+    @Failure 400 {object} response.Response "请求错误"
+    @Failure 500 {object} response.Response "服务器错误"
+    @Router /api/ocr [post]
+    """
     global ocr
     
     try:
         # 检查 OCR 是否已初始化
         if not ocr_initialized:
             if not initialize_paddleocr():
-                return jsonify({"code": 500, "data": "", "message": "OCR 服务初始化失败"})
+                return jsonify({"code": 500, "data": "", "message": "OCR 服务初始化失败，请查看日志"})
         
         # 获取请求数据
         data = request.get_json()
-        if not data or 'Base64' not in data:
+        if not data or 'image' not in data:
             return jsonify({"code": 400, "data": "", "message": "缺少 Base64 图片数据"})
         
         # 解码 Base64 图片
-        base64_str = data['Base64']
+        base64_str = data['image']
         try:
             img_data = base64.b64decode(base64_str)
             img = Image.open(BytesIO(img_data))
@@ -157,7 +273,7 @@ def ocr_recognition():
         # 处理识别结果
         if result and len(result) > 0:
             response = process_ocr_result(result[0], target_text)
-            logger.info(f"OCR 识别完成: {response['message']}")
+            logger.info(f"OCR 识别完成: {response['message']}, 识别文字: {response['data']}")
         else:
             response = {"code": 200, "data": "", "message": "没有识别到文字"}
             
@@ -170,16 +286,36 @@ def ocr_recognition():
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """健康检查接口"""
+    """
+    健康检查接口
+    
+    @Tags 系统
+    @Summary 健康检查
+    @Description 检查OCR服务运行状态
+    @Accept application/json
+    @Produce application/json
+    @Success 200 {object} response.Response "成功"
+    @Router /health [get]
+    """
     status = "ready" if ocr_initialized else "initializing"
     return jsonify({"status": status, "message": "OCR 服务运行中"})
 
 @app.route('/', methods=['GET'])
 def index():
-    """首页"""
+    """
+    首页
+    
+    @Tags 系统
+    @Summary 服务信息
+    @Description 获取OCR服务的基本信息和可用端点
+    @Accept application/json
+    @Produce application/json
+    @Success 200 {object} response.Response "成功"
+    @Router / [get]
+    """
     return jsonify({
         "service": "PaddleOCR HTTP API",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "status": "ready" if ocr_initialized else "initializing",
         "endpoints": {
             "POST /api/ocr": "OCR 文字识别",
@@ -189,12 +325,21 @@ def index():
     })
 
 if __name__ == '__main__':
+    logger.info("="*60)
     logger.info("启动 PaddleOCR HTTP 服务...")
+    logger.info("="*60)
     
     # 预先初始化 OCR
-    initialize_paddleocr()
+    if initialize_paddleocr():
+        logger.info("OCR 服务已就绪")
+    else:
+        logger.error("OCR 服务初始化失败，但服务仍将启动（将在首次请求时重试）")
     
     # 启动 Flask 服务
+    logger.info("="*60)
+    logger.info("Flask 服务监听: http://127.0.0.1:1224")
+    logger.info("="*60)
+    
     app.run(
         host='127.0.0.1',
         port=1224,
