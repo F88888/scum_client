@@ -15,7 +15,7 @@ import tarfile
 from io import BytesIO
 from paddleocr import PaddleOCR
 from flask import Flask, request, jsonify
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter
 import numpy as np
 import traceback
 
@@ -213,17 +213,19 @@ def initialize_paddleocr():
                     lang='ch',                      # 中英文混合识别
                     rec_model_dir=custom_model_path,
                     show_log=False,
-                    use_angle_cls=False,
+                    use_angle_cls=True,             # 启用角度分类，提高倾斜/模糊文字识别准确度
                     det=True,
                     rec=True,
                     # 性能优化参数
                     use_mp=True,                    # 启用多进程加速
                     total_process_num=2,            # 进程数量
-                    det_db_thresh=0.3,              # 检测阈值（降低以加快速度）
+                    det_db_thresh=0.4,              # 提高检测阈值，提高模糊文字检测准确度（从0.3提高到0.4）
                     det_db_box_thresh=0.5,          # 框选阈值
                     det_db_unclip_ratio=1.6,        # 文本框扩展比例
                     max_batch_size=10,              # 批处理大小
-                    rec_batch_num=6                 # 识别批处理数量
+                    rec_batch_num=6,                # 识别批处理数量
+                    use_dilation=True,              # 启用膨胀，提高模糊文字检测准确度
+                    det_db_score_mode='slow'        # 使用慢速评分模式，提高准确度
                 )
             except Exception as e:
                 logger.warning(f"加载自定义模型失败: {e}，将使用默认模型")
@@ -235,13 +237,13 @@ def initialize_paddleocr():
                 use_gpu=False,
                 lang='ch',                      # 中英文混合识别（支持中文、英文、数字）
                 show_log=False,
-                use_angle_cls=False,            # 禁用角度分类，加快识别速度
+                use_angle_cls=True,             # 启用角度分类，提高倾斜/模糊文字识别准确度
                 det=True,                       # 启用文字检测
                 rec=True,                       # 启用文字识别
                 # 性能优化参数
                 use_mp=True,                    # 启用多进程加速
                 total_process_num=2,            # 进程数量（避免过多占用资源）
-                det_db_thresh=0.3,              # 降低检测阈值，加快速度
+                det_db_thresh=0.4,              # 提高检测阈值，提高模糊文字检测准确度（从0.3提高到0.4）
                 det_db_box_thresh=0.5,          # 框选阈值
                 det_db_unclip_ratio=1.6,        # 文本框扩展比例
                 max_batch_size=10,              # 批处理大小
@@ -249,8 +251,8 @@ def initialize_paddleocr():
                 # 使用轻量级模型
                 det_model_dir=None,             # 使用默认检测模型
                 rec_model_dir=None,             # 使用默认识别模型
-                use_dilation=False,             # 禁用膨胀，加快速度
-                det_db_score_mode='fast'        # 使用快速评分模式
+                use_dilation=True,              # 启用膨胀，提高模糊文字检测准确度
+                det_db_score_mode='slow'        # 使用慢速评分模式，提高准确度
             )
         
         ocr_initialized = True
@@ -278,13 +280,29 @@ def initialize_paddleocr():
 
 def preprocess_image(img):
     """
-    预处理图片（仅转换格式，不压缩）
+    预处理图片（图像增强以提高模糊文字识别准确度）
     
-    @description: 将PIL图片转换为numpy数组，保持原始分辨率以确保识别准确度
+    @description: 对图片进行锐化、对比度增强等处理，提高模糊文字的识别准确度，不改变图片尺寸
     @param: img Image PIL图片对象
     @return: img_array ndarray 处理后的numpy数组
     """
-    # 直接转换为 numpy 数组，不进行任何缩放以保持最高识别准确度
+    # 确保图片是 RGB 模式
+    if img.mode != 'RGB':
+        img = img.convert('RGB')
+    
+    # 1. 锐化处理（Unsharp Masking）- 提高文字边缘清晰度
+    # 使用轻微锐化，避免过度处理导致噪点
+    img = img.filter(ImageFilter.UnsharpMask(radius=1, percent=150, threshold=3))
+    
+    # 2. 对比度增强 - 提高文字与背景的对比度
+    enhancer = ImageEnhance.Contrast(img)
+    img = enhancer.enhance(1.3)  # 增强30%对比度
+    
+    # 3. 轻微锐化边缘（针对模糊文字）
+    # 使用边缘增强滤波器
+    img = img.filter(ImageFilter.EDGE_ENHANCE_MORE)
+    
+    # 4. 转换为 numpy 数组，保持原始分辨率
     img_array = np.array(img)
     
     return img_array
@@ -496,8 +514,9 @@ def index():
         "optimizations": [
             "多进程加速",
             "原始分辨率识别（保证准确度）",
-            "轻量级模型",
-            "快速检测模式"
+            "图像增强预处理（锐化、对比度增强）",
+            "角度分类支持（提高倾斜文字识别）",
+            "优化检测阈值（提高模糊文字识别准确度）"
         ],
         "status": "ready" if ocr_initialized else "initializing",
         "endpoints": {

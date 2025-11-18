@@ -86,8 +86,8 @@ func searchTextInFullScreen(hand syscall.Handle, targetText string) (*TextPositi
 	var ocrResult request.OcrResult
 	textVariants := getMultilingualTexts(targetText)
 
-	// 全屏截图（启用图像增强以提高OCR识别准确率）
-	imagePath, err := ScreenshotGrayscale(hand, 0, 0, global.GameWindowWidth, global.GameWindowHeight, true)
+	// 全屏截图
+	imagePath, err := ScreenshotGrayscale(hand, 0, 0, global.GameWindowWidth, global.GameWindowHeight)
 	if err != nil {
 		return nil, fmt.Errorf("全屏截图失败: %v", err)
 	}
@@ -334,8 +334,7 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 		// 截图指定区域
 		fmt.Printf("[DEBUG] 第%d次开始截图，区域: [%d,%d,%d,%d], 窗口大小: %dx%d\n",
 			i, cache.X1, cache.Y1, cache.X2, cache.Y2, cache.X2-cache.X1, cache.Y2-cache.Y1)
-		// 截图指定区域（启用图像增强以提高OCR识别准确率）
-		imagePath, err := ScreenshotGrayscale(hand, cache.X1, cache.Y1, cache.X2, cache.Y2, true)
+		imagePath, err := ScreenshotGrayscale(hand, cache.X1, cache.Y1, cache.X2, cache.Y2)
 		if err != nil {
 			fmt.Printf("[ERROR] 第%d次截图失败: %v\n", i, err)
 			continue
