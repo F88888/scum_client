@@ -115,6 +115,10 @@ func logDebug(format string, v ...interface{}) {
 func isChatInterfaceOpen(hand syscall.Handle) bool {
 	// 检查MUTE按钮是否存在（聊天界面的标志）
 	if util.ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand, "MUTE") == nil {
+		// 检查当前聊天模式，按输入框颜色
+		cache, _ := util.GetTextPositionFromCache("MUTE")
+		s := util.SpecifiedCoordinateColor(hand, cache.X2+100, cache.Y1+5)
+		fmt.Println("当前颜色:", s)
 		return true
 	}
 	return false

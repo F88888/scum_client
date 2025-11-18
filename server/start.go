@@ -100,22 +100,7 @@ func checkGameState(hand syscall.Handle) string {
 		return "GAME_" + currentMode
 	}
 
-	// 4. 检查是否在游戏主界面（没有聊天框激活）
-	// 这里可以通过检查游戏界面的其他特征来确认是否在游戏中
-	// 比如检查血条、生命值等游戏UI元素
-	if isInGameInterface(hand) {
-		return "GAME_MAIN"
-	}
-
-	return "UNKNOWN"
-}
-
-// 检查是否在游戏主界面（没有聊天框）
-func isInGameInterface(hand syscall.Handle) bool {
-	// 检查游戏界面的特征，这里可以添加更多的检测逻辑
-	// 比如检查生命值条、饥饿度等UI元素的存在
-	// 暂时通过排除法，如果不在登录、加载、聊天界面，且游戏在运行，则认为在游戏主界面
-	return true
+	return "GAME_MAIN"
 }
 
 // Start
@@ -221,22 +206,8 @@ func Start() {
 
 	case currentState == "GAME_MAIN":
 		// 在游戏主界面，检查是否有待处理的指令
-		if hasPendingCommands {
-			logInfo("检测到游戏主界面，有待处理指令，激活聊天监控...")
-			// 重置错误计数器
-			errorNumber2 = 0
-			errorNumber = 0
-			// 激活聊天并开始监控
-			ChatMonitorWithActivation(hand)
-		} else {
-			// 没有待处理指令，保持在游戏主界面，定期检查
-			logDebug("游戏主界面，无待处理指令，定期检查...")
-			// 执行定时任务（每分钟的三个固定指令）
-			executePeriodicCommands(hand)
-			time.Sleep(5 * time.Second) // 短暂等待后再次检查
-		}
+		ChatMonitorWithActivation(hand)
 		return
-
 	case currentState == "GAME_GLOBAL":
 		// 已经在GLOBAL模式，可以直接启动监控
 		logInfo("检测到GLOBAL模式，启动聊天监控...")

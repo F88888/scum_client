@@ -41,11 +41,11 @@ func ClearTextPositionCache() {
 	textPositionCache = make(map[string]*TextPositionCache)
 }
 
-// getTextPositionFromCache 从缓存获取文本位置
+// GetTextPositionFromCache 从缓存获取文本位置
 // @description: 从缓存获取文本位置
 // @param: text string 目标文本
 // @return: *TextPositionCache, bool
-func getTextPositionFromCache(text string) (*TextPositionCache, bool) {
+func GetTextPositionFromCache(text string) (*TextPositionCache, bool) {
 	cacheMutex.RLock()
 	defer cacheMutex.RUnlock()
 	cache, exists := textPositionCache[text]
@@ -60,7 +60,6 @@ func setTextPositionCache(text string, cache *TextPositionCache) {
 	cacheMutex.Lock()
 	defer cacheMutex.Unlock()
 	textPositionCache[text] = cache
-	fmt.Printf("缓存文本位置: '%s' -> [%d,%d,%d,%d]\n", text, cache.X1, cache.Y1, cache.X2, cache.Y2)
 }
 
 // getMultilingualTexts 获取多语言文本列表
@@ -105,15 +104,7 @@ func searchTextInFullScreen(hand syscall.Handle, targetText string) (*TextPositi
 	// 将请求数据转换为JSON
 	jsonData, err := json.Marshal(map[string]interface{}{
 		"image": base64Data,
-		"options": map[string]interface{}{
-			"data": map[string]interface{}{
-				"format": "dict",
-			},
-		},
 	})
-	if err != nil {
-		return nil, fmt.Errorf("JSON编码失败: %v", err)
-	}
 
 	// 发送POST请求到PaddleOCR服务
 	client := &http.Client{Timeout: _const.OCRServiceAPITimeout}
@@ -132,7 +123,6 @@ func searchTextInFullScreen(hand syscall.Handle, targetText string) (*TextPositi
 	}
 
 	// 解析OCR响应
-	fmt.Println("responseData", string(responseData))
 	if err = json.Unmarshal(responseData, &ocrResult); err != nil {
 		return nil, fmt.Errorf("解析响应JSON失败: %v", err)
 	}
@@ -298,13 +288,11 @@ func searchTextInFullScreen(hand syscall.Handle, targetText string) (*TextPositi
 // @return: error
 func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test string) error {
 	// 检查缓存（使用原始key）
-	cache, exists := getTextPositionFromCache(test)
+	cache, exists := GetTextPositionFromCache(test)
 
 	var isNewlyFound bool
 	if !exists {
 		// 首次搜索，使用全屏搜索
-		textVariants := getMultilingualTexts(test)
-		fmt.Printf("首次搜索文本 '%s' (支持多语言: %v)，使用全屏搜索...\n", test, textVariants)
 		newCache, err := searchTextInFullScreen(hand, test)
 		if err != nil {
 			return err
@@ -314,11 +302,7 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 		setTextPositionCache(test, newCache)
 		cache = newCache
 		isNewlyFound = true
-		fmt.Printf("全屏搜索成功找到文本 '%s'，位置已缓存\n", test)
 	} else {
-		textVariants := getMultilingualTexts(test)
-		fmt.Printf("使用缓存位置搜索文本 '%s' (支持多语言: %v): [%d,%d,%d,%d]\n",
-			test, textVariants, cache.X1, cache.Y1, cache.X2, cache.Y2)
 		isNewlyFound = false
 	}
 
@@ -332,21 +316,14 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 	var hasSuccessfulScreenshot bool
 	for i := 1; i <= 3; i++ {
 		// 截图指定区域
-		fmt.Printf("[DEBUG] 第%d次开始截图，区域: [%d,%d,%d,%d], 窗口大小: %dx%d\n",
-			i, cache.X1, cache.Y1, cache.X2, cache.Y2, cache.X2-cache.X1, cache.Y2-cache.Y1)
 		imagePath, err := ScreenshotGrayscale(hand, cache.X1, cache.Y1, cache.X2, cache.Y2)
 		if err != nil {
 			fmt.Printf("[ERROR] 第%d次截图失败: %v\n", i, err)
 			continue
 		}
-		fmt.Printf("[DEBUG] 第%d次截图成功，保存路径: %s\n", i, imagePath)
 
 		// 获取图片文件信息
-		fileInfo, err := os.Stat(imagePath)
-		if err == nil {
-			fmt.Printf("[DEBUG] 截图文件大小: %d 字节\n", fileInfo.Size())
-		}
-
+		_, err = os.Stat(imagePath)
 		defer func(imgPath string) {
 			// 删除临时文件
 			_ = os.Remove(imgPath)
@@ -356,10 +333,8 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 		// 读取图片
 		imageData, err := os.ReadFile(imagePath)
 		if err != nil {
-			fmt.Printf("[ERROR] 第%d次读取图片文件失败: %v\n", i, err)
 			continue
 		}
-		fmt.Printf("[DEBUG] 第%d次读取图片成功，数据大小: %d 字节\n", i, len(imageData))
 
 		// 将图片转换为Base64编码
 		base64Data := base64.StdEncoding.EncodeToString(imageData)
@@ -369,7 +344,6 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 			"image": base64Data,
 		})
 		if err != nil {
-			fmt.Printf("第%d次JSON编码失败: %v\n", i, err)
 			continue
 		}
 
@@ -377,11 +351,9 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 		var ocrResult request.OcrResult
 		client := &http.Client{Timeout: _const.OCRServiceAPITimeout}
 		ocrAPIURL := fmt.Sprintf("http://%s:%d/api/ocr", global.OCRServiceHost, global.OCRServicePort)
-		fmt.Printf("第%d次发送OCR请求到: %s (区域: [%d,%d,%d,%d])\n", i, ocrAPIURL, cache.X1, cache.Y1, cache.X2, cache.Y2)
 		resp, err := client.Post(ocrAPIURL,
 			"application/json", bytes.NewBuffer(jsonData))
 		if err != nil {
-			fmt.Printf("第%d次发送请求失败: %v\n", i, err)
 			continue
 		}
 
@@ -392,10 +364,6 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 			fmt.Printf("第%d次读取响应失败: %v\n", i, err)
 			continue
 		}
-
-		// 输出原始响应（用于调试）
-		fmt.Printf("第%d次OCR响应: %s\n", i, string(responseData))
-
 		// 解析OCR响应
 		if err = json.Unmarshal(responseData, &ocrResult); err != nil {
 			fmt.Printf("第%d次解析响应JSON失败: %v\n", i, err)
@@ -467,7 +435,6 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 			}
 
 			if len(itemsToProcess) > 0 {
-				fmt.Printf("第%d次OCR识别成功，正在验证多语言文本 '%s' (支持: %v)...\n", i, test, textVariants)
 				for _, item := range itemsToProcess {
 					text := item.Text
 					textUpper := strings.ToUpper(strings.TrimSpace(text))
@@ -476,13 +443,11 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 					for _, variant := range textVariants {
 						variantUpper := strings.ToUpper(strings.TrimSpace(variant))
 						if strings.Contains(textUpper, variantUpper) || strings.Contains(variantUpper, textUpper) {
-							fmt.Printf("第%d次验证成功: 找到目标文字 '%s' (识别为: '%s', 置信度: %.2f)\n", i, test, text, item.Confidence)
 							ocrVerified = true
 							return nil
 						}
 					}
 				}
-				fmt.Printf("第%d次OCR识别成功但文本不匹配，已尝试多语言: %v\n", i, textVariants)
 			}
 			ocrVerified = true // OCR成功识别了文本，只是不匹配
 		} else if ocrResult.Code == 200 {
@@ -544,19 +509,7 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 				for _, item := range itemsToProcess {
 					recognizedTexts = append(recognizedTexts, item.Text)
 				}
-				fmt.Printf("第%d次OCR识别到文字但未找到目标 (Code: %d, Message: %s)，识别到的文字: %v，目标文本 '%s' (支持多语言: %v)\n",
-					i, ocrResult.Code, ocrResult.Message, recognizedTexts, test, textVariants)
-			} else {
-				// 没有识别到任何文字
-				fmt.Printf("[WARN] 第%d次OCR未识别到任何文字 (Code: %d, Message: %s)，目标文本 '%s' (支持多语言: %v)\n",
-					i, ocrResult.Code, ocrResult.Message, test, textVariants)
 			}
-		} else if ocrResult.Code == 101 {
-			// 检测不到文本
-			fmt.Printf("第%d次OCR识别失败 (Code: %d - 图片中无文本)，目标文本 '%s' (支持多语言: %v)\n", i, ocrResult.Code, test, textVariants)
-		} else {
-			// OCR识别失败，记录尝试的多语言文本
-			fmt.Printf("第%d次OCR识别失败 (Code: %d, Message: %s)，目标文本 '%s' (支持多语言: %v)\n", i, ocrResult.Code, ocrResult.Message, test, textVariants)
 		}
 
 		// 如果识别失败，等待后重试
@@ -568,29 +521,22 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 	// 判断失败原因
 	if !hasSuccessfulScreenshot {
 		// 如果所有截图都失败，保留缓存（位置可能是正确的，只是截图功能有问题）
-		fmt.Printf("验证失败: 所有截图都失败，保留缓存位置 '%s'\n", test)
 		return errors.New("截图失败，无法验证文本")
 	} else if ocrVerified {
 		// 如果OCR成功识别了文本，但文本不匹配，说明位置可能已变化，清除缓存
-		fmt.Printf("验证失败: OCR识别成功但文本不匹配，清除缓存 '%s'\n", test)
 		cacheMutex.Lock()
 		delete(textPositionCache, test)
 		cacheMutex.Unlock()
 		return errors.New("文本位置已变化，缓存已清除")
 	} else {
 		// OCR识别失败，可能是临时问题，尝试全屏搜索一次确认文本是否还在
-		fmt.Printf("[WARN] 验证失败: OCR识别失败，尝试全屏搜索确认文本 '%s' 是否还在界面上...\n", test)
 		newCache, err := searchTextInFullScreen(hand, test)
 		if err == nil && newCache != nil {
 			// 全屏搜索找到了文本，但位置已变化，更新缓存
-			fmt.Printf("[INFO] 全屏搜索成功找到文本 '%s'，但位置已变化: 旧位置 [%d,%d,%d,%d] -> 新位置 [%d,%d,%d,%d]\n",
-				test, cache.X1, cache.Y1, cache.X2, cache.Y2, newCache.X1, newCache.Y1, newCache.X2, newCache.Y2)
 			setTextPositionCache(test, newCache)
 			return nil // 位置已更新，验证通过
 		} else {
 			// 全屏搜索也没找到，可能是界面已变化，保留旧缓存
-			fmt.Printf("[WARN] 全屏搜索也未找到文本 '%s'，保留旧缓存位置 [%d,%d,%d,%d]\n",
-				test, cache.X1, cache.Y1, cache.X2, cache.Y2)
 			return errors.New("OCR识别失败，全屏搜索也未找到文本，保留缓存位置")
 		}
 	}
@@ -605,7 +551,7 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 // @return: error
 func ClickTextCenter(hand syscall.Handle, text string) error {
 	// 获取文本位置（从缓存或全屏搜索）
-	cache, exists := getTextPositionFromCache(text)
+	cache, exists := GetTextPositionFromCache(text)
 	if !exists {
 		// 首次搜索，使用全屏搜索
 		newCache, err := searchTextInFullScreen(hand, text)
