@@ -447,18 +447,14 @@ func sharpenImage(img *image.RGBA) *image.RGBA {
 
 	for y := 1; y < height-1; y++ {
 		for x := 1; x < width-1; x++ {
-			// 获取周围像素
-			c00 := img.RGBAAt(x-1, y-1)
-			c01 := img.RGBAAt(x, y-1)
-			c02 := img.RGBAAt(x+1, y-1)
-			c10 := img.RGBAAt(x-1, y)
-			c11 := img.RGBAAt(x, y) // 中心像素
-			c12 := img.RGBAAt(x+1, y)
-			c20 := img.RGBAAt(x-1, y+1)
-			c21 := img.RGBAAt(x, y+1)
-			c22 := img.RGBAAt(x+1, y+1)
+			// 获取周围像素（拉普拉斯锐化核只需要上下左右四个方向）
+			c01 := img.RGBAAt(x, y-1) // 上
+			c10 := img.RGBAAt(x-1, y) // 左
+			c11 := img.RGBAAt(x, y)   // 中心像素
+			c12 := img.RGBAAt(x+1, y) // 右
+			c21 := img.RGBAAt(x, y+1) // 下
 
-			// 应用锐化核
+			// 应用锐化核 [0 -1 0; -1 5 -1; 0 -1 0]
 			r := float64(c11.R)*5 - float64(c01.R+c10.R+c12.R+c21.R)
 			g := float64(c11.G)*5 - float64(c01.G+c10.G+c12.G+c21.G)
 			b := float64(c11.B)*5 - float64(c01.B+c10.B+c12.B+c21.B)
