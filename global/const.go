@@ -28,6 +28,6 @@ const (
 var GameUIText = map[string][]string{
 	"MUTE":     {"MUTE", "静音"},
 	"GLOBAL":   {"GLOBAL", "全球"},
-	"LOCAL":    {"LOCAL", "本地"},
+	"LOCAL":    {"LOCAL", "本地", "台", "口"},
 	"CONTINUE": {"CONTINUE", "继续游戏"},
 }
