@@ -566,6 +566,7 @@ func ChatMonitorWithActivation(hwnd syscall.Handle) {
 
 	for {
 		// 获取所有待处理指令
+		isChatInterfaceOpen(hwnd)
 		commands := getAllPendingCommands()
 
 		if len(commands) > 0 {
