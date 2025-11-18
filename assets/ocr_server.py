@@ -276,33 +276,15 @@ def initialize_paddleocr():
         
         return False
 
-def preprocess_image(img, max_size=1920):
+def preprocess_image(img):
     """
-    预处理图片以提高 OCR 性能
+    预处理图片（仅转换格式，不压缩）
     
-    @description: 调整图片大小，优化OCR识别速度
+    @description: 将PIL图片转换为numpy数组，保持原始分辨率以确保识别准确度
     @param: img Image PIL图片对象
-    @param: max_size int 最大边长（像素）
     @return: img_array ndarray 处理后的numpy数组
     """
-    # 获取原始尺寸
-    width, height = img.size
-    
-    # 如果图片过大，进行缩放
-    if max(width, height) > max_size:
-        # 计算缩放比例
-        if width > height:
-            new_width = max_size
-            new_height = int(height * (max_size / width))
-        else:
-            new_height = max_size
-            new_width = int(width * (max_size / height))
-        
-        # 使用快速缩放（BILINEAR比LANCZOS更快，且对OCR足够用）
-        img = img.resize((new_width, new_height), Image.BILINEAR)
-        logger.info(f"图片已缩放: {width}x{height} -> {new_width}x{new_height}")
-    
-    # 转换为 numpy 数组
+    # 直接转换为 numpy 数组，不进行任何缩放以保持最高识别准确度
     img_array = np.array(img)
     
     return img_array
@@ -450,8 +432,8 @@ def ocr_recognition():
     try:
         logger.info("开始执行 OCR 识别...")
         
-        # 预处理图片（缩放 + 转换为 numpy 数组）
-        img_array = preprocess_image(img, max_size=1920)
+        # 预处理图片（转换为 numpy 数组，保持原始分辨率）
+        img_array = preprocess_image(img)
         
         # 执行 OCR 识别（使用 cls=False 加快速度）
         result = ocr.ocr(img_array, cls=False)
@@ -513,7 +495,7 @@ def index():
         ],
         "optimizations": [
             "多进程加速",
-            "图片自动缩放",
+            "原始分辨率识别（保证准确度）",
             "轻量级模型",
             "快速检测模式"
         ],

@@ -465,6 +465,7 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 		var ocrResult request.OcrResult
 		client := &http.Client{Timeout: _const.OCRServiceAPITimeout}
 		ocrAPIURL := fmt.Sprintf("http://%s:%d/api/ocr", global.OCRServiceHost, global.OCRServicePort)
+		fmt.Printf("第%d次发送OCR请求到: %s (区域: [%d,%d,%d,%d])\n", i, ocrAPIURL, cache.X1, cache.Y1, cache.X2, cache.Y2)
 		resp, err := client.Post(ocrAPIURL,
 			"application/json", bytes.NewBuffer(jsonData))
 		if err != nil {
@@ -479,6 +480,9 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 			fmt.Printf("第%d次读取响应失败: %v\n", i, err)
 			continue
 		}
+
+		// 输出原始响应（用于调试）
+		fmt.Printf("第%d次OCR响应: %s\n", i, string(responseData))
 
 		// 解析OCR响应
 		if err = json.Unmarshal(responseData, &ocrResult); err != nil {
@@ -569,6 +573,72 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 				fmt.Printf("第%d次OCR识别成功但文本不匹配，已尝试多语言: %v\n", i, textVariants)
 			}
 			ocrVerified = true // OCR成功识别了文本，只是不匹配
+		} else if ocrResult.Code == 200 {
+			// Code 200: 可能表示"未找到目标文字"或"没有识别到文字"
+			// 检查是否有识别结果
+			var itemsToProcess []request.OcrItem
+			if len(ocrResult.Items) > 0 {
+				itemsToProcess = ocrResult.Items
+			} else {
+				// 尝试解析 data
+				dataArray, ok := ocrResult.Data.([]interface{})
+				if ok {
+					for _, item := range dataArray {
+						itemMap, ok := item.(map[string]interface{})
+						if !ok {
+							continue
+						}
+						text, _ := itemMap["text"].(string)
+						confidence, _ := itemMap["confidence"].(float64)
+						boxData, _ := itemMap["box"].([]interface{})
+						var box [][]float64
+						for _, point := range boxData {
+							pointArray, ok := point.([]interface{})
+							if !ok || len(pointArray) < 2 {
+								continue
+							}
+							x, _ := pointArray[0].(float64)
+							y, _ := pointArray[1].(float64)
+							box = append(box, []float64{x, y})
+						}
+						var position request.OcrPosition
+						if posMap, ok := itemMap["position"].(map[string]interface{}); ok {
+							if left, ok := posMap["left"].(float64); ok {
+								position.Left = int(left)
+							}
+							if top, ok := posMap["top"].(float64); ok {
+								position.Top = int(top)
+							}
+							if right, ok := posMap["right"].(float64); ok {
+								position.Right = int(right)
+							}
+							if bottom, ok := posMap["bottom"].(float64); ok {
+								position.Bottom = int(bottom)
+							}
+						}
+						itemsToProcess = append(itemsToProcess, request.OcrItem{
+							Text:       text,
+							Confidence: confidence,
+							Box:        box,
+							Position:   position,
+						})
+					}
+				}
+			}
+
+			if len(itemsToProcess) > 0 {
+				// 识别到了文字，但没有找到目标文字
+				recognizedTexts := make([]string, 0, len(itemsToProcess))
+				for _, item := range itemsToProcess {
+					recognizedTexts = append(recognizedTexts, item.Text)
+				}
+				fmt.Printf("第%d次OCR识别到文字但未找到目标 (Code: %d, Message: %s)，识别到的文字: %v，目标文本 '%s' (支持多语言: %v)\n",
+					i, ocrResult.Code, ocrResult.Message, recognizedTexts, test, textVariants)
+			} else {
+				// 没有识别到任何文字
+				fmt.Printf("第%d次OCR未识别到任何文字 (Code: %d, Message: %s)，目标文本 '%s' (支持多语言: %v)\n",
+					i, ocrResult.Code, ocrResult.Message, test, textVariants)
+			}
 		} else if ocrResult.Code == 101 {
 			// 检测不到文本，标记为移动到桌面
 			shouldMoveToDesktop = true
@@ -576,7 +646,7 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 			fmt.Printf("第%d次OCR识别失败 (Code: %d - 图片中无文本)，目标文本 '%s' (支持多语言: %v)\n", i, ocrResult.Code, test, textVariants)
 		} else {
 			// OCR识别失败，记录尝试的多语言文本
-			fmt.Printf("第%d次OCR识别失败 (Code: %d)，目标文本 '%s' (支持多语言: %v)\n", i, ocrResult.Code, test, textVariants)
+			fmt.Printf("第%d次OCR识别失败 (Code: %d, Message: %s)，目标文本 '%s' (支持多语言: %v)\n", i, ocrResult.Code, ocrResult.Message, test, textVariants)
 		}
 
 		// 如果识别失败，等待后重试

@@ -200,19 +200,22 @@ func (c *Client) handleHeartbeat(msg request.WebSocketMessage) {
 
 // handleClientUpdate handles client update request
 func (c *Client) handleClientUpdate(data interface{}) {
-	fmt.Println("Received update request")
+	fmt.Println("🔄 Received update request")
 
 	updateData, ok := data.(map[string]interface{})
 	if !ok {
-		fmt.Println("Invalid update request data")
+		fmt.Println("❌ Invalid update request data format")
 		return
 	}
 
 	action, _ := updateData["action"].(string)
 	updateType, _ := updateData["type"].(string)
+	downloadURL, _ := updateData["download_url"].(string)
+
+	fmt.Printf("📋 Update request details - Action: %s, Type: %s, DownloadURL: %s\n", action, updateType, downloadURL)
 
 	if action == "update" && updateType == "self_update" {
-		fmt.Println("Starting self-update process...")
+		fmt.Println("✅ Starting self-update process...")
 
 		// 发送更新开始状态
 		c.sendResponse(MsgTypeClientUpdate, map[string]interface{}{
@@ -222,12 +225,14 @@ func (c *Client) handleClientUpdate(data interface{}) {
 
 		// 启动自我更新流程
 		go c.performSelfUpdate(updateData)
+	} else {
+		fmt.Printf("⚠️ Invalid update request - Action: %s, Type: %s\n", action, updateType)
 	}
 }
 
 // performSelfUpdate performs the self-update process
 func (c *Client) performSelfUpdate(updateData map[string]interface{}) {
-	fmt.Println("Performing self-update...")
+	fmt.Println("🚀 Performing self-update...")
 
 	// 发送更新状态
 	c.sendResponse(MsgTypeClientUpdate, map[string]interface{}{
@@ -240,6 +245,7 @@ func (c *Client) performSelfUpdate(updateData map[string]interface{}) {
 	downloadURL, _ := updateData["download_url"].(string)
 
 	if downloadURL == "" {
+		fmt.Println("❌ No download URL provided in update request")
 		c.sendResponse(MsgTypeClientUpdate, map[string]interface{}{
 			"type":    "self_update",
 			"status":  "no_update",
@@ -248,10 +254,12 @@ func (c *Client) performSelfUpdate(updateData map[string]interface{}) {
 		return
 	}
 
+	fmt.Printf("📥 Download URL: %s\n", downloadURL)
+
 	// 准备外部更新器
 	currentExe, err := os.Executable()
 	if err != nil {
-		fmt.Printf("Failed to get executable path: %v\n", err)
+		fmt.Printf("❌ Failed to get executable path: %v\n", err)
 		c.sendResponse(MsgTypeClientUpdate, map[string]interface{}{
 			"type":    "self_update",
 			"status":  "failed",
@@ -259,6 +267,8 @@ func (c *Client) performSelfUpdate(updateData map[string]interface{}) {
 		}, "")
 		return
 	}
+
+	fmt.Printf("📂 Current executable path: %s\n", currentExe)
 
 	updateConfig := util.ExternalUpdaterConfig{
 		CurrentExePath: currentExe,
@@ -274,8 +284,9 @@ func (c *Client) performSelfUpdate(updateData map[string]interface{}) {
 	}, "")
 
 	// 启动外部更新器
+	fmt.Println("🔧 Starting external updater...")
 	if err := util.ExecuteExternalUpdate(updateConfig); err != nil {
-		fmt.Printf("Failed to start external updater: %v\n", err)
+		fmt.Printf("❌ Failed to start external updater: %v\n", err)
 		c.sendResponse(MsgTypeClientUpdate, map[string]interface{}{
 			"type":    "self_update",
 			"status":  "failed",
@@ -284,7 +295,7 @@ func (c *Client) performSelfUpdate(updateData map[string]interface{}) {
 		return
 	}
 
-	fmt.Println("External updater started, shutting down current process...")
+	fmt.Println("✅ External updater started successfully, shutting down current process...")
 
 	// 发送最终状态
 	c.sendResponse(MsgTypeClientUpdate, map[string]interface{}{
@@ -296,8 +307,21 @@ func (c *Client) performSelfUpdate(updateData map[string]interface{}) {
 	// 延迟一段时间让消息发送完成，然后退出让更新器接管
 	go func() {
 		time.Sleep(2 * time.Second)
-		fmt.Println("Exiting for update...")
-		// 这里应该优雅退出，但为了简化，直接退出
+		fmt.Println("🔄 Exiting for update...")
+
+		// 优雅关闭 WebSocket 连接
+		if c.wsClient != nil {
+			fmt.Println("🔌 Closing WebSocket connection...")
+			if err := c.wsClient.Close(); err != nil {
+				fmt.Printf("⚠️ Failed to close WebSocket: %v\n", err)
+			} else {
+				fmt.Println("✅ WebSocket connection closed")
+			}
+		}
+
+		// 退出程序，让更新器接管
+		fmt.Println("👋 Exiting program for update...")
+		os.Exit(0)
 	}()
 }
 
