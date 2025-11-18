@@ -7,7 +7,6 @@ import (
 	"unsafe"
 
 	"github.com/atotto/clipboard"
-	"github.com/go-vgo/robotgo"
 	_const "qq_client/internal/const"
 )
 

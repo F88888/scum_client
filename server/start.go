@@ -1,7 +1,6 @@
 package server
 
 import (
-	"github.com/go-vgo/robotgo"
 	"os/exec"
 	"qq_client/global"
 	_const "qq_client/internal/const"
