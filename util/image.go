@@ -422,11 +422,21 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 	}()
 	for i := 1; i <= 3; i++ {
 		// 截图指定区域
+		fmt.Printf("[DEBUG] 第%d次开始截图，区域: [%d,%d,%d,%d], 窗口大小: %dx%d\n",
+			i, cache.X1, cache.Y1, cache.X2, cache.Y2, cache.X2-cache.X1, cache.Y2-cache.Y1)
 		imagePath, err := ScreenshotGrayscale(hand, cache.X1, cache.Y1, cache.X2, cache.Y2)
 		if err != nil {
-			fmt.Printf("第%d次截图失败: %v\n", i, err)
+			fmt.Printf("[ERROR] 第%d次截图失败: %v\n", i, err)
 			continue
 		}
+		fmt.Printf("[DEBUG] 第%d次截图成功，保存路径: %s\n", i, imagePath)
+
+		// 获取图片文件信息
+		fileInfo, err := os.Stat(imagePath)
+		if err == nil {
+			fmt.Printf("[DEBUG] 截图文件大小: %d 字节\n", fileInfo.Size())
+		}
+
 		shouldMoveToDesktop := false
 		defer func(imgPath string, shouldMove *bool) {
 			if !*shouldMove {
@@ -440,9 +450,10 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 		// 读取图片
 		imageData, err := os.ReadFile(imagePath)
 		if err != nil {
-			fmt.Printf("第%d次读取图片文件失败: %v\n", i, err)
+			fmt.Printf("[ERROR] 第%d次读取图片文件失败: %v\n", i, err)
 			continue
 		}
+		fmt.Printf("[DEBUG] 第%d次读取图片成功，数据大小: %d 字节\n", i, len(imageData))
 
 		// 将图片转换为Base64编码
 		base64Data := base64.StdEncoding.EncodeToString(imageData)
@@ -630,9 +641,12 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 				fmt.Printf("第%d次OCR识别到文字但未找到目标 (Code: %d, Message: %s)，识别到的文字: %v，目标文本 '%s' (支持多语言: %v)\n",
 					i, ocrResult.Code, ocrResult.Message, recognizedTexts, test, textVariants)
 			} else {
-				// 没有识别到任何文字
-				fmt.Printf("第%d次OCR未识别到任何文字 (Code: %d, Message: %s)，目标文本 '%s' (支持多语言: %v)\n",
+				// 没有识别到任何文字 - 保存截图到桌面以便调试
+				fmt.Printf("[WARN] 第%d次OCR未识别到任何文字 (Code: %d, Message: %s)，目标文本 '%s' (支持多语言: %v)\n",
 					i, ocrResult.Code, ocrResult.Message, test, textVariants)
+				fmt.Printf("[DEBUG] 保存截图到桌面以便调试: %s\n", imagePath)
+				shouldMoveToDesktop = true
+				imagesToMove = append(imagesToMove, imagePath)
 			}
 		} else if ocrResult.Code == 101 {
 			// 检测不到文本，标记为移动到桌面
@@ -663,9 +677,21 @@ func ExtractTextFromSpecifiedAreaAndValidateThreeTimes(hand syscall.Handle, test
 		cacheMutex.Unlock()
 		return errors.New("文本位置已变化，缓存已清除")
 	} else {
-		// OCR识别失败，可能是临时问题，保留缓存
-		fmt.Printf("验证失败: OCR识别失败，保留缓存位置 '%s'\n", test)
-		return errors.New("OCR识别失败，无法验证文本")
+		// OCR识别失败，可能是临时问题，尝试全屏搜索一次确认文本是否还在
+		fmt.Printf("[WARN] 验证失败: OCR识别失败，尝试全屏搜索确认文本 '%s' 是否还在界面上...\n", test)
+		newCache, err := searchTextInFullScreen(hand, test)
+		if err == nil && newCache != nil {
+			// 全屏搜索找到了文本，但位置已变化，更新缓存
+			fmt.Printf("[INFO] 全屏搜索成功找到文本 '%s'，但位置已变化: 旧位置 [%d,%d,%d,%d] -> 新位置 [%d,%d,%d,%d]\n",
+				test, cache.X1, cache.Y1, cache.X2, cache.Y2, newCache.X1, newCache.Y1, newCache.X2, newCache.Y2)
+			setTextPositionCache(test, newCache)
+			return nil // 位置已更新，验证通过
+		} else {
+			// 全屏搜索也没找到，可能是界面已变化，保留旧缓存
+			fmt.Printf("[WARN] 全屏搜索也未找到文本 '%s'，保留旧缓存位置 [%d,%d,%d,%d]\n",
+				test, cache.X1, cache.Y1, cache.X2, cache.Y2)
+			return errors.New("OCR识别失败，全屏搜索也未找到文本，保留缓存位置")
+		}
 	}
 }
 
