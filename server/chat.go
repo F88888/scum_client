@@ -118,6 +118,7 @@ func isChatInterfaceOpen(hand syscall.Handle) string {
 		// 检查当前聊天模式，按输入框颜色
 		cache, _ := util.GetTextPositionFromCache("MUTE")
 		colorHex := util.SpecifiedCoordinateColor(hand, cache.X2+100, cache.Y1+5)
+		fmt.Println("<UNK>", colorHex)
 		chatMode := util.GetChatModeByColor(colorHex)
 		return chatMode
 	}
